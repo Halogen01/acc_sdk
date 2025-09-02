@@ -163,6 +163,66 @@ class AccAccountUsersApi:
 
         return all_users
 
+# Custom definition
+
+    def get_userid_projects(self, user_id, sort=None, fields=None, limit=200, offset=0)->list[dict]:
+        """
+        Get all users projects in the account.
+        https://aps.autodesk.com/en/docs/acc/v1/reference/http/admin-usersuseridprojects-GET/
+
+        Args:
+            user_id (str): The ID of the user to get projects for. Can be Autodesk or ACC ID.
+            sort (str, optional): Sort the projects by a field. Defaults to None.
+            fields (str, optional): Fields to return in the response. Defaults to None.
+            limit (int, optional): Limit the number of userid_projects to return. Default 20, Max 200.
+            offset (int, optional): Offset the index number of userid_projects to return. Defaults to 0.
+
+        Returns:
+            list[dict]: A successful response is an array of projects, flat JSON objects 
+            with the following attributes:
+
+        Example:
+            ```python
+            # Get all userid_projects
+            userid_projects = acc.account_users.get_userid_projects("user_id")
+            
+            # Get userid_projects with specific fields
+            userid_projects = acc.account_users.get_userid_projects("user_id",
+                fields="name,jobNumber,status",
+                sort="name"
+            )        
+            ```
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.base.get_2leggedToken()}",
+        }
+        url = (
+            f"{self.base_url}/accounts/{self.base.account_id}/users/{user_id}/projects"
+        )
+        params = {}
+
+        if sort:
+            params["sort"] = sort
+        if fields:
+            params["field"] = fields
+        
+
+        all_userid_projects = []
+        while True:
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                userid_projects = response.json()
+                if not userid_projects:
+                    break
+                all_userid_projects.extend(userid_projects)
+                params["offset"] += 200
+            else:
+                response.raise_for_status()
+
+        return all_userid_projects
+
+
     def get_users_search(self, **params)->list[dict]:
         """
         Get users by search parameters.
