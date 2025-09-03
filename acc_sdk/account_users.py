@@ -35,6 +35,7 @@ class AccAccountUsersApi:
         self.base_url = "https://developer.api.autodesk.com/hq/v1"
         self.base = base
         self.user_id = self.base.user_info.get('uid')
+        self.base_url_const = "https://developer.api.autodesk.com/construction/admin/v1"
 
     def get_user_by_id(self, user_id)->dict:
         """
@@ -198,14 +199,17 @@ class AccAccountUsersApi:
             "Authorization": f"Bearer {self.base.get_2leggedToken()}",
         }
         url = (
-            f"{self.base_url}/accounts/{self.base.account_id}/users/{user_id}/projects"
+            f"{self.base_url_const}/accounts/{self.base.account_id}/users/{user_id}/projects"
         )
-        params = {}
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
 
         if sort:
             params["sort"] = sort
         if fields:
-            params["field"] = fields
+            params["fields"] = fields
         
 
         all_userid_projects = []
@@ -216,7 +220,9 @@ class AccAccountUsersApi:
                 if not userid_projects:
                     break
                 all_userid_projects.extend(userid_projects)
-                params["offset"] += 200
+                if len(userid_projects) < limit:
+                    break
+                params["offset"] += limit
             else:
                 response.raise_for_status()
 
