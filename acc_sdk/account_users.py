@@ -279,7 +279,7 @@ class AccAccountUsersApi:
         params["offset"] = 0
         all_users = []
         while True:
-            response = response = requests.get(base_url, headers=headers, params=params)
+            response = requests.get(base_url, headers=headers, params=params)
 
             if response.status_code == 200:
                 users = response.json()
@@ -407,7 +407,7 @@ class AccAccountUsersApi:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": token,
+            "Authorization": f"Bearer {token}",
             "User-Id": self.user_id,
         }
         response = requests.post(
