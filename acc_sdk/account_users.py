@@ -216,7 +216,7 @@ class AccAccountUsersApi:
         while True:
             response = requests.get(url, headers=headers, params=params)
             if response.status_code == 200:
-                userid_projects = response.json()
+                userid_projects = response.json()['results']
                 if not userid_projects:
                     break
                 all_userid_projects.extend(userid_projects)
@@ -225,7 +225,7 @@ class AccAccountUsersApi:
                 params["offset"] += limit
             else:
                 response.raise_for_status()
-            print(response.text)
+            
 
         return all_userid_projects
 
