@@ -166,7 +166,7 @@ class AccAccountUsersApi:
 
 # Custom definition
 
-    def get_userid_projects(self, user_id, sort=None, fields=None, limit=200, offset=0)->list[dict]:
+    def get_userid_projects(self, user_id, sort=None, fields=None, limit=200, offset=0)->dict:
         """
         Get all users projects in the account.
         https://aps.autodesk.com/en/docs/acc/v1/reference/http/admin-usersuseridprojects-GET/
