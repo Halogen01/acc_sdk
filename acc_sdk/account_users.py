@@ -279,7 +279,7 @@ class AccAccountUsersApi:
         while True:
             response = requests.get(url, headers=headers, params=params)
             if response.status_code == 200:
-                user_products = response.json()
+                user_products = response.json()['results']
                 if not user_products:
                     break
                 all_user_products.extend(user_products)
