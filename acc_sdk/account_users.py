@@ -229,6 +229,67 @@ class AccAccountUsersApi:
 
         return all_userid_projects
 
+    def get_userid_products(self, user_id, sort=None, fields=None, limit=100, offset=0)->list[dict]:
+        """
+        Get all products assigned to a user in the account.
+        https://aps.autodesk.com/en/docs/acc/v1/reference/http/admin-usersuseridproducts-GET/
+
+        Args:
+            user_id (str): The ID of the user to get products for.
+            sort (str, optional): Sort the products by a field. Defaults to None.
+            fields (str, optional): Fields to return in the response. Defaults to None.
+            limit (int, optional): Limit the number of products to return. Default 100.
+            offset (int, optional): Offset the index number of products to return. Defaults to 0.
+
+        Returns:
+            list[dict]: Array of product objects containing information about the products 
+            assigned to the user.
+
+        Example:
+            ```python
+            # Get all user's products
+            user_products = acc.account_users.get_userid_products("user_id")
+            
+            # Get products with specific fields
+            user_products = acc.account_users.get_userid_products(
+                "user_id",
+                fields="id,name,status",
+                sort="name"
+            )        
+            ```
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.base.get_2leggedToken()}",
+        }
+        url = (
+            f"{self.base_url_const}/accounts/{self.base.account_id}/users/{user_id}/products"
+        )
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+
+        if sort:
+            params["sort"] = sort
+        if fields:
+            params["fields"] = fields
+
+        all_user_products = []
+        while True:
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                user_products = response.json()
+                if not user_products:
+                    break
+                all_user_products.extend(user_products)
+                if len(user_products) < limit:
+                    break
+                params["offset"] += limit
+            else:
+                response.raise_for_status()
+
+        return all_user_products
 
     def get_users_search(self, **params)->list[dict]:
         """
