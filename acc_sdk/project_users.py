@@ -469,8 +469,8 @@ class AccProjectUsersApi:
             if not project_id:
                 continue  # Skip projects without an id
 
-            # Assume self.get_all returns a list of project user dictionaries.
-            project_users = self.get_all(project_id)
+            # Assume self.get_users returns a list of project user dictionaries.
+            project_users = self.get_users(project_id)
             project_user_dict = {
                 pu.get("email"): pu for pu in project_users if pu.get("email")
             }
