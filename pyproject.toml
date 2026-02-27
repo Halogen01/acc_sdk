@@ -1,34 +1,36 @@
 [project]
 name = "acc_sdk"
-description = "An Unofficial Python Implementation of the Autodesk Construction Cloud API SDK"
+description = "An Fork of the Unofficial Python Implementation of the Autodesk Construction Cloud API SDK"
 license = { text = "MIT" }
 authors = [{name="Daniel Byrne", email= "realdanielbyrne@icloud.com"}]
-maintainers = [{name="Daniel Byrne", email= "realdanielbyrne@icloud.com"}]
+maintainers = [{name="Ben O'Brien", email= "bobrien@peritas.au"}]
 readme = "README.md"
 requires-python = ">= 3.12"
 version = "0.5.14"
 dependencies = [
     "requests>=2.32.4",
-    "urllib3>=2.6.3",
+    "urllib3>=2.5.0",
     "python-dotenv>=1.0.1",
     "flask>=3.1.0",
 ]
 
-[tool.setuptools.package-data]
-"acc_sdk" = ["docs/*.md"]
 [project.urls]
-repository = "https://github.com/realdanielbyrne/acc_sdk"
+repository = "https://github.com/Halogen01/acc_sdk"
 
 [tool.poetry]
 packages = [
     {include = "acc_sdk"},
-    {include = "docs", from = "."}
+]
+include = [
+    {path = "docs", format = "sdist"},
+    {path = "MANIFEST.in", format = "sdist"},
+    {path = "README.md", format = "sdist"},
 ]
 
 [tool.poetry.dependencies]
 python = "^3.12"
 requests = "^2.32.4"
-urllib3 = "^2.6.3"
+urllib3 = "^2.5.0"
 flask = "^3.1.0"
 argparse = "^1.4.0"
 ipython = "^9.0.1"
