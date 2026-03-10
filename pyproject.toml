@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=65.5.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "acc_sdk"
 description = "An Fork of the Unofficial Python Implementation of the Autodesk Construction Cloud API SDK"
