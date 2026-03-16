@@ -247,7 +247,7 @@ class AccProjectUsersApi:
         user["sub"] = user["uid"] = user["autodeskId"]
         return user
 
-    def get_user_by_email(self, project_id: str, email: str) -> dict:
+    def get_user_by_email(self, project_id: str, email: str) -> dict | None:
         """
         Retrieves a user from a project by their email address.
 
@@ -424,7 +424,7 @@ class AccProjectUsersApi:
         return response.json()
 
     def patch_project_users(
-        self, projects: list[dict], users: list[dict], products: list[dict] = None
+        self, projects: list[dict], users: list[dict], products: list[dict] | None = None
     ):
         """
         Updates multiple users across multiple projects.
@@ -459,7 +459,7 @@ class AccProjectUsersApi:
         """
         # Use the provided products or the default if None.
         if products is None:
-            products = productmember  # assuming productmember is defined globally
+            products = AccProjectUsersApi.productmember  # assuming productmember is defined globally
 
         # Build a dictionary of users keyed by email.
         user_dict = {user.get("email"): user for user in users if user.get("email")}
@@ -470,7 +470,7 @@ class AccProjectUsersApi:
                 continue  # Skip projects without an id
 
             # Assume self.get_users returns a list of project user dictionaries.
-            project_users = self.get_users(project_id)
+            project_users = self.get_users(project_id, follow_pagination=True)
             project_user_dict = {
                 pu.get("email"): pu for pu in project_users if pu.get("email")
             }
