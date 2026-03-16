@@ -10,7 +10,7 @@ authors = [{name="Daniel Byrne", email= "realdanielbyrne@icloud.com"}]
 maintainers = [{name="Ben O'Brien", email= "bobrien@peritas.au"}]
 readme = "README.md"
 requires-python = ">= 3.12"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
     "requests>=2.32.4",
     "urllib3>=2.5.0",
