@@ -319,6 +319,8 @@ class AccProjectUsersApi:
         modified_user = {"email": user.get("email"), "products": user.get("products")}
         if user.get("roleIds"):
             modified_user["roleIds"] = user.get("roleIds")
+        if user.get("suppressAdministrativeEmails") is not None:
+            modified_user["suppressAdministrativeEmails"] = user.get("suppressAdministrativeEmails")
 
         response = requests.post(url, headers=headers, json=modified_user, timeout=100)
         self._handle_error_response(response)
