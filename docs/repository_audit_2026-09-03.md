@@ -292,11 +292,13 @@ shapes should delegate to these internals unchanged.
 These capabilities should initially be new methods. Existing methods should not
 silently change return shapes or token-selection behaviour.
 
-**Progress recorded 4 September 2026:** Items 1 through 5 are complete in the
+**Progress recorded 4 September 2026:** Items 1 through 6 are complete in the
 Halogen fork. The legacy Data Management methods remain available, while tested
 additive methods now provide corrected navigation, OSS v2 streamed downloads,
 single/multipart signed-S3 uploads, storage creation, and complete new-item and
-new-version upload workflows. Items 6 through 8 remain planned.
+new-version upload workflows. Current Autodesk region values and non-mutating
+hub-region detection are also available, with `US` remaining the default.
+Items 7 and 8 remain planned.
 
 ### Phase 5: Deliberate migration
 
