@@ -306,5 +306,227 @@ class TestSignedUrlPartUpload(unittest.TestCase):
         self.base.transport.put.assert_not_called()
 
 
+class TestFileUploadWorkflow(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.api = AccDataManagementApi(self.base)
+        self.api.get_signed_s3_upload = MagicMock()
+        self.api.upload_file_part = MagicMock()
+        self.api.complete_signed_s3_upload = MagicMock()
+
+    def create_file(self, directory, size):
+        source = Path(directory) / "model.rvt"
+        with source.open("wb") as source_file:
+            source_file.truncate(size)
+        return source
+
+    def test_uploads_and_completes_a_single_part_file(self):
+        self.api.get_signed_s3_upload.return_value = {
+            "uploadKey": "upload-key",
+            "urls": ["https://example.s3.amazonaws.com/part-one"],
+        }
+        self.api.upload_file_part.return_value = '"etag-one"'
+        completed = {"objectId": "urn:adsk.objects:os.object:bucket/model.rvt"}
+        self.api.complete_signed_s3_upload.return_value = completed
+
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, 3)
+            result = self.api.upload_file_to_oss(
+                "wip.dm.prod",
+                "folder/model.rvt",
+                source,
+                minutes_expiration=10,
+                use_acceleration=False,
+            )
+
+        self.assertEqual(result, completed)
+        self.api.get_signed_s3_upload.assert_called_once_with(
+            "wip.dm.prod",
+            "folder/model.rvt",
+            parts=1,
+            first_part=1,
+            upload_key=None,
+            minutes_expiration=10,
+            use_acceleration=False,
+        )
+        self.api.upload_file_part.assert_called_once_with(
+            "https://example.s3.amazonaws.com/part-one",
+            source,
+            0,
+            3,
+            max_retries=2,
+        )
+        self.api.complete_signed_s3_upload.assert_called_once_with(
+            "wip.dm.prod",
+            "folder/model.rvt",
+            "upload-key",
+            size=3,
+            e_tags=['"etag-one"'],
+        )
+
+    def test_uploads_a_multipart_file_with_ordered_etags(self):
+        part_size = self.api.MIN_MULTIPART_UPLOAD_PART_SIZE
+        self.api.get_signed_s3_upload.return_value = {
+            "uploadKey": "upload-key",
+            "urls": [
+                "https://example.s3.amazonaws.com/part-one",
+                "https://example.s3.amazonaws.com/part-two",
+            ],
+        }
+        self.api.upload_file_part.side_effect = ['"etag-one"', '"etag-two"']
+        self.api.complete_signed_s3_upload.return_value = {"size": part_size + 2}
+
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, part_size + 2)
+            result = self.api.upload_file_to_oss(
+                "wip.dm.prod", "model.rvt", source
+            )
+
+        self.assertEqual(result, {"size": part_size + 2})
+        self.api.get_signed_s3_upload.assert_called_once_with(
+            "wip.dm.prod",
+            "model.rvt",
+            parts=2,
+            first_part=1,
+            upload_key=None,
+            minutes_expiration=None,
+            use_acceleration=None,
+        )
+        self.assertEqual(
+            self.api.upload_file_part.call_args_list,
+            [
+                unittest.mock.call(
+                    "https://example.s3.amazonaws.com/part-one",
+                    source,
+                    0,
+                    part_size,
+                    max_retries=2,
+                ),
+                unittest.mock.call(
+                    "https://example.s3.amazonaws.com/part-two",
+                    source,
+                    part_size,
+                    2,
+                    max_retries=2,
+                ),
+            ],
+        )
+        self.api.complete_signed_s3_upload.assert_called_once_with(
+            "wip.dm.prod",
+            "model.rvt",
+            "upload-key",
+            size=part_size + 2,
+            e_tags=['"etag-one"', '"etag-two"'],
+        )
+
+    def test_requests_additional_url_batches_with_same_upload_key(self):
+        part_size = self.api.MIN_MULTIPART_UPLOAD_PART_SIZE
+        first_urls = [f"https://example.test/part-{part}" for part in range(1, 26)]
+        self.api.get_signed_s3_upload.side_effect = [
+            {"uploadKey": "upload-key", "urls": first_urls},
+            {"uploadKey": "upload-key", "urls": ["https://example.test/part-26"]},
+        ]
+        self.api.upload_file_part.return_value = '"etag"'
+        self.api.complete_signed_s3_upload.return_value = {"size": 26 * part_size}
+
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, 26 * part_size)
+            self.api.upload_file_to_oss("wip.dm.prod", "model.rvt", source)
+
+        self.assertEqual(self.api.get_signed_s3_upload.call_count, 2)
+        self.api.get_signed_s3_upload.assert_any_call(
+            "wip.dm.prod",
+            "model.rvt",
+            parts=25,
+            first_part=1,
+            upload_key=None,
+            minutes_expiration=None,
+            use_acceleration=None,
+        )
+        self.api.get_signed_s3_upload.assert_any_call(
+            "wip.dm.prod",
+            "model.rvt",
+            parts=1,
+            first_part=26,
+            upload_key="upload-key",
+            minutes_expiration=None,
+            use_acceleration=None,
+        )
+
+    def test_refreshes_expired_part_url_with_bounded_attempt(self):
+        expired_response = MagicMock(status_code=403)
+        expired_error = requests.HTTPError(response=expired_response)
+        self.api.get_signed_s3_upload.side_effect = [
+            {"uploadKey": "upload-key", "urls": ["https://example.test/expired"]},
+            {"uploadKey": "upload-key", "urls": ["https://example.test/refreshed"]},
+        ]
+        self.api.upload_file_part.side_effect = [expired_error, '"etag"']
+        self.api.complete_signed_s3_upload.return_value = {"size": 3}
+
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, 3)
+            result = self.api.upload_file_to_oss(
+                "wip.dm.prod",
+                "model.rvt",
+                source,
+                max_url_refreshes=1,
+            )
+
+        self.assertEqual(result, {"size": 3})
+        self.api.get_signed_s3_upload.assert_called_with(
+            "wip.dm.prod",
+            "model.rvt",
+            parts=1,
+            first_part=1,
+            upload_key="upload-key",
+            minutes_expiration=None,
+            use_acceleration=None,
+        )
+        self.assertEqual(self.api.upload_file_part.call_count, 2)
+
+    def test_rejects_oversized_file_and_small_multipart_parts_before_request(self):
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, 2)
+
+            with self.assertRaisesRegex(ValueError, "exceeds max_bytes"):
+                self.api.upload_file_to_oss(
+                    "wip.dm.prod", "model.rvt", source, max_bytes=1
+                )
+            with self.assertRaisesRegex(ValueError, "at least 5 MiB"):
+                self.api.upload_file_to_oss(
+                    "wip.dm.prod", "model.rvt", source, part_size=1
+                )
+
+        self.api.get_signed_s3_upload.assert_not_called()
+
+    def test_rejects_invalid_session_and_completion_validation_error(self):
+        with TemporaryDirectory() as directory:
+            source = self.create_file(directory, 3)
+            self.api.get_signed_s3_upload.return_value = {
+                "uploadKey": "upload-key",
+                "urls": [],
+            }
+
+            with self.assertRaisesRegex(RuntimeError, "expected 1"):
+                self.api.upload_file_to_oss(
+                    "wip.dm.prod", "model.rvt", source
+                )
+
+            self.api.get_signed_s3_upload.return_value = {
+                "uploadKey": "upload-key",
+                "urls": ["https://example.test/part-one"],
+            }
+            self.api.upload_file_part.return_value = None
+            self.api.complete_signed_s3_upload.return_value = {
+                "status": "error",
+                "reason": "size mismatch",
+            }
+
+            with self.assertRaisesRegex(RuntimeError, "size mismatch"):
+                self.api.upload_file_to_oss(
+                    "wip.dm.prod", "model.rvt", source
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

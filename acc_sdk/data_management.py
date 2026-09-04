@@ -36,6 +36,11 @@ class AccDataManagementApi:
     RETRYABLE_UPLOAD_STATUSES = frozenset({429, 500, 502, 503, 504})
     MAX_UPLOAD_RETRIES = 5
     MAX_UPLOAD_RETRY_DELAY = 30.0
+    MIN_MULTIPART_UPLOAD_PART_SIZE = 5 * 1024 * 1024
+    DEFAULT_UPLOAD_PART_SIZE = MIN_MULTIPART_UPLOAD_PART_SIZE
+    MAX_UPLOAD_PART_SIZE = 5 * 1024 * 1024 * 1024
+    MAX_UPLOAD_PARTS = 10_000
+    MAX_SIGNED_UPLOAD_URLS = 25
 
     def __init__(self, base: AccBase):
         self.base = base
@@ -413,6 +418,165 @@ class AccDataManagementApi:
                 except (TypeError, ValueError):
                     pass
         return min(0.5 * (2**attempt), self.MAX_UPLOAD_RETRY_DELAY)
+
+    def upload_file_to_oss(
+        self,
+        bucket_key: str,
+        object_key: str,
+        source_path,
+        part_size: int = DEFAULT_UPLOAD_PART_SIZE,
+        max_bytes: int = None,
+        minutes_expiration: int = None,
+        use_acceleration: bool = None,
+        max_retries: int = 2,
+        max_url_refreshes: int = 2,
+    ) -> dict:
+        """Upload and complete one local file using OSS v2 signed-S3 URLs."""
+        if not isinstance(bucket_key, str) or not bucket_key:
+            raise ValueError("bucket_key is required")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("object_key is required")
+        if not isinstance(source_path, (str, os.PathLike)) or not os.fspath(
+            source_path
+        ):
+            raise ValueError("source_path is required")
+        if (
+            isinstance(part_size, bool)
+            or not isinstance(part_size, int)
+            or not 1 <= part_size <= self.MAX_UPLOAD_PART_SIZE
+        ):
+            raise ValueError(
+                "part_size must be an integer from 1 to "
+                f"{self.MAX_UPLOAD_PART_SIZE} bytes"
+            )
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 0
+        ):
+            raise ValueError("max_bytes must be a non-negative integer")
+        for value, name in (
+            (max_retries, "max_retries"),
+            (max_url_refreshes, "max_url_refreshes"),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= self.MAX_UPLOAD_RETRIES
+            ):
+                raise ValueError(
+                    f"{name} must be an integer from 0 to {self.MAX_UPLOAD_RETRIES}"
+                )
+
+        source = Path(source_path)
+        if not source.is_file():
+            raise ValueError("source_path must identify an existing file")
+        file_size = source.stat().st_size
+        if max_bytes is not None and file_size > max_bytes:
+            raise ValueError("Upload exceeds max_bytes")
+
+        total_parts = max(1, (file_size + part_size - 1) // part_size)
+        if total_parts > 1 and part_size < self.MIN_MULTIPART_UPLOAD_PART_SIZE:
+            raise ValueError(
+                "part_size must be at least 5 MiB for a multipart upload"
+            )
+        if total_parts > self.MAX_UPLOAD_PARTS:
+            raise ValueError(
+                f"Upload requires more than {self.MAX_UPLOAD_PARTS} parts"
+            )
+
+        upload_key = None
+        signed_urls = []
+        e_tags = []
+        part_number = 1
+        while part_number <= total_parts:
+            if not signed_urls:
+                requested_parts = min(
+                    self.MAX_SIGNED_UPLOAD_URLS, total_parts - part_number + 1
+                )
+                session = self.get_signed_s3_upload(
+                    bucket_key,
+                    object_key,
+                    parts=requested_parts,
+                    first_part=part_number,
+                    upload_key=upload_key,
+                    minutes_expiration=minutes_expiration,
+                    use_acceleration=use_acceleration,
+                )
+                upload_key, signed_urls = self._validate_upload_session(
+                    session, upload_key, requested_parts
+                )
+
+            signed_url = signed_urls.pop(0)
+            offset = (part_number - 1) * part_size
+            length = min(part_size, file_size - offset)
+            refreshes = 0
+            while True:
+                try:
+                    e_tag = self.upload_file_part(
+                        signed_url,
+                        source,
+                        offset,
+                        length,
+                        max_retries=max_retries,
+                    )
+                    break
+                except requests.HTTPError as error:
+                    status_code = getattr(error.response, "status_code", None)
+                    if status_code != 403 or refreshes >= max_url_refreshes:
+                        raise
+                    refreshes += 1
+                    signed_urls = []
+                    refreshed_session = self.get_signed_s3_upload(
+                        bucket_key,
+                        object_key,
+                        parts=1,
+                        first_part=part_number,
+                        upload_key=upload_key,
+                        minutes_expiration=minutes_expiration,
+                        use_acceleration=use_acceleration,
+                    )
+                    upload_key, refreshed_urls = self._validate_upload_session(
+                        refreshed_session, upload_key, 1
+                    )
+                    signed_url = refreshed_urls[0]
+
+            e_tags.append(e_tag)
+            part_number += 1
+
+        completed = self.complete_signed_s3_upload(
+            bucket_key,
+            object_key,
+            upload_key,
+            size=file_size,
+            e_tags=e_tags if all(e_tags) else None,
+        )
+        if completed.get("status") == "error":
+            reason = completed.get("reason", "validation failed")
+            raise RuntimeError(f"OSS upload completion failed: {reason}")
+        return completed
+
+    @staticmethod
+    def _validate_upload_session(
+        session: dict, current_upload_key: str, expected_urls: int
+    ) -> tuple[str, list[str]]:
+        if not isinstance(session, dict):
+            raise RuntimeError("OSS returned an invalid signed upload response")
+        upload_key = session.get("uploadKey")
+        signed_urls = session.get("urls")
+        if not isinstance(upload_key, str) or not upload_key:
+            raise RuntimeError("OSS did not return an upload key")
+        if current_upload_key is not None and upload_key != current_upload_key:
+            raise RuntimeError("OSS changed the upload key during continuation")
+        if (
+            not isinstance(signed_urls, list)
+            or len(signed_urls) != expected_urls
+            or any(not isinstance(url, str) or not url for url in signed_urls)
+        ):
+            raise RuntimeError(
+                f"OSS did not return the expected {expected_urls} signed upload URLs"
+            )
+        return upload_key, list(signed_urls)
 
     ###########################################################################
     # Hubs
