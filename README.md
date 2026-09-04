@@ -46,6 +46,8 @@ AccSdk currently implements the following Autodesk Construction Cloud APIs:
  delete files, create folders, and move files between folders. The API also provides access to the data stored
  in the ACC Data Management module. See the [Data Management workflow guide](docs/data_management_api.md)
  for the additive OSS v2 download, upload, item, and version methods.
+- The Revit Cloud Models API retrieves the host and linked files associated with
+ published ACC model versions. See the [RCM linked-file guide](docs/revit_cloud_models_api.md).
 - The Forms API provides methods to securely create forms from a template, fill out, modify, and retrieve form data.
 - The Project Users API provides methods to manage project users, such as adding, updating, deleting, and patching permissions for users on a project.
 - The Projects API provides methods to create, read, update, and delete projects.
