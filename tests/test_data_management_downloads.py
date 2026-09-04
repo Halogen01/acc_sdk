@@ -191,5 +191,121 @@ class TestSignedUrlStreaming(unittest.TestCase):
         self.base.transport.get.assert_not_called()
 
 
+class TestVersionDownloadWorkflow(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.api = AccDataManagementApi(self.base)
+        self.api.get_version = MagicMock()
+        self.api.get_signed_s3_download = MagicMock()
+        self.api.download_from_signed_url = MagicMock(return_value="saved/model.rvt")
+
+    def test_resolves_version_storage_and_streams_single_url(self):
+        self.api.get_version.return_value = {
+            "relationships": {
+                "storage": {
+                    "data": {
+                        "type": "objects",
+                        "id": "urn:adsk.objects:os.object:wip.dm.prod/folder/model.rvt",
+                    }
+                }
+            }
+        }
+        self.api.get_signed_s3_download.return_value = {
+            "status": "complete",
+            "url": "https://example.s3.amazonaws.com/signed-object",
+            "size": 123,
+        }
+
+        result = self.api.download_version(
+            "project-id",
+            "version-id",
+            "saved/model.rvt",
+            user_id="user-id",
+            minutes_expiration=5,
+            use_cdn=True,
+            chunk_size=4096,
+            max_bytes=200,
+        )
+
+        self.assertEqual(result, "saved/model.rvt")
+        self.api.get_version.assert_called_once_with(
+            "project-id", "version-id", user_id="user-id"
+        )
+        self.api.get_signed_s3_download.assert_called_once_with(
+            "wip.dm.prod",
+            "folder/model.rvt",
+            minutes_expiration=5,
+            use_cdn=True,
+            public_resource_fallback=True,
+        )
+        self.api.download_from_signed_url.assert_called_once_with(
+            "https://example.s3.amazonaws.com/signed-object",
+            "saved/model.rvt",
+            chunk_size=4096,
+            max_bytes=200,
+        )
+
+    def test_rejects_version_without_storage_relationship(self):
+        self.api.get_version.return_value = {"relationships": {}}
+
+        with self.assertRaisesRegex(ValueError, "storage relationship"):
+            self.api.download_version("project-id", "version-id", "model.rvt")
+
+        self.api.get_signed_s3_download.assert_not_called()
+        self.api.download_from_signed_url.assert_not_called()
+
+    def test_rejects_chunked_response_when_single_url_is_unavailable(self):
+        self.api.get_version.return_value = {
+            "relationships": {
+                "storage": {
+                    "data": {
+                        "id": "urn:adsk.objects:os.object:wip.dm.prod/model.rvt"
+                    }
+                }
+            }
+        }
+        self.api.get_signed_s3_download.return_value = {
+            "status": "chunked",
+            "urls": {"0-9": "https://example.s3.amazonaws.com/part-one"},
+            "size": 10,
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "download status: chunked"):
+            self.api.download_version("project-id", "version-id", "model.rvt")
+
+        self.api.download_from_signed_url.assert_not_called()
+
+    def test_rejects_signed_metadata_over_size_limit_before_streaming(self):
+        self.api.get_version.return_value = {
+            "relationships": {
+                "storage": {
+                    "data": {
+                        "id": "urn:adsk.objects:os.object:wip.dm.prod/model.rvt"
+                    }
+                }
+            }
+        }
+        self.api.get_signed_s3_download.return_value = {
+            "status": "complete",
+            "url": "https://example.s3.amazonaws.com/signed-object",
+            "size": 101,
+        }
+
+        with self.assertRaisesRegex(ValueError, "exceeds max_bytes"):
+            self.api.download_version(
+                "project-id", "version-id", "model.rvt", max_bytes=100
+            )
+
+        self.api.download_from_signed_url.assert_not_called()
+
+    def test_rejects_invalid_limits_before_version_lookup(self):
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            self.api.download_version(
+                "project-id", "version-id", "model.rvt", max_bytes=0
+            )
+
+        self.api.get_version.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

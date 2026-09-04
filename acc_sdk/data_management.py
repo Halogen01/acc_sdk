@@ -93,21 +93,7 @@ class AccDataManagementApi:
             destination_path
         ):
             raise ValueError("destination_path is required")
-        if (
-            isinstance(chunk_size, bool)
-            or not isinstance(chunk_size, int)
-            or not 1 <= chunk_size <= self.MAX_DOWNLOAD_CHUNK_SIZE
-        ):
-            raise ValueError(
-                "chunk_size must be an integer from 1 to "
-                f"{self.MAX_DOWNLOAD_CHUNK_SIZE} bytes"
-            )
-        if max_bytes is not None and (
-            isinstance(max_bytes, bool)
-            or not isinstance(max_bytes, int)
-            or max_bytes < 1
-        ):
-            raise ValueError("max_bytes must be a positive integer")
+        self._validate_download_limits(chunk_size, max_bytes)
 
         destination = Path(destination_path)
         if destination.is_dir():
@@ -149,6 +135,73 @@ class AccDataManagementApi:
             response.close()
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    @classmethod
+    def _validate_download_limits(cls, chunk_size: int, max_bytes: int) -> None:
+        if (
+            isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, int)
+            or not 1 <= chunk_size <= cls.MAX_DOWNLOAD_CHUNK_SIZE
+        ):
+            raise ValueError(
+                "chunk_size must be an integer from 1 to "
+                f"{cls.MAX_DOWNLOAD_CHUNK_SIZE} bytes"
+            )
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 1
+        ):
+            raise ValueError("max_bytes must be a positive integer")
+
+    def download_version(
+        self,
+        project_id: str,
+        version_id: str,
+        destination_path,
+        user_id: str = None,
+        minutes_expiration: int = None,
+        use_cdn: bool = None,
+        chunk_size: int = DEFAULT_DOWNLOAD_CHUNK_SIZE,
+        max_bytes: int = None,
+    ) -> str:
+        """Resolve a Data Management version and stream its OSS object to disk."""
+        self._validate_download_limits(chunk_size, max_bytes)
+        version = self.get_version(project_id, version_id, user_id=user_id)
+        try:
+            storage_urn = version["relationships"]["storage"]["data"]["id"]
+        except (KeyError, TypeError):
+            raise ValueError(
+                "The version does not contain an OSS storage relationship"
+            ) from None
+
+        bucket_key, object_key = self.parse_oss_storage_urn(storage_urn)
+        signed_download = self.get_signed_s3_download(
+            bucket_key,
+            object_key,
+            minutes_expiration=minutes_expiration,
+            use_cdn=use_cdn,
+            public_resource_fallback=True,
+        )
+        signed_url = signed_download.get("url")
+        if not signed_url:
+            status = signed_download.get("status", "unknown")
+            raise RuntimeError(
+                "OSS did not return a single download URL "
+                f"(download status: {status})"
+            )
+
+        if max_bytes is not None:
+            signed_size = signed_download.get("size")
+            if isinstance(signed_size, int) and signed_size > max_bytes:
+                raise ValueError("Download exceeds max_bytes")
+
+        return self.download_from_signed_url(
+            signed_url,
+            destination_path,
+            chunk_size=chunk_size,
+            max_bytes=max_bytes,
+        )
 
     ###########################################################################
     # Hubs
