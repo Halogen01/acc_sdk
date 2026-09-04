@@ -210,7 +210,7 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}/topFolders"
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}/topFolders"
 
         params = {}
         if excludeDeleted:
@@ -222,7 +222,7 @@ class AccDataManagementApi:
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers, params=params)
         if response.status_code == 200:
             folder_data = response.json().get("data", [])
             return folder_data
@@ -389,6 +389,9 @@ class AccDataManagementApi:
         Returns:
             dict: A dictionary containing the folder details.
         """
+        if not project_id.startswith("b."):
+            project_id = "b." + project_id
+
         url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/folders/{folder_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
@@ -397,7 +400,7 @@ class AccDataManagementApi:
         if if_modified_since:
             headers["If-Modified-Since"] = if_modified_since
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json().get("data", {})
@@ -444,7 +447,7 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/:{project_id}/folders/:{folder_id}/contents"
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/folders/{folder_id}/contents"
 
         
         headers = {
@@ -472,7 +475,7 @@ class AccDataManagementApi:
         else:
             params["includeHidden"] = "false"
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
             return response.json().get("data", [])

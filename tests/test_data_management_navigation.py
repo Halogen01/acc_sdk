@@ -104,5 +104,88 @@ class TestDataManagementHubProjectNavigation(unittest.TestCase):
         )
 
 
+class TestDataManagementFolderNavigation(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_private_token.return_value = "private-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccDataManagementApi(self.base)
+        self.headers = {"Authorization": "Bearer private-token"}
+
+    def response(self, payload, status_code=200):
+        response = MagicMock(status_code=status_code)
+        response.json.return_value = payload
+        return response
+
+    def test_get_project_top_folders_uses_filters_and_normalized_path(self):
+        self.base.transport.get.return_value = self.response(
+            {"data": [{"id": "folder-id"}]}
+        )
+
+        result = self.api.get_project_top_folders(
+            "hub-id",
+            "project-id",
+            excludeDeleted=True,
+            projectFilesOnly=True,
+        )
+
+        self.assertEqual(result, [{"id": "folder-id"}])
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/project/v1/hubs/b.hub-id/projects/b.project-id/topFolders",
+            headers=self.headers,
+            params={"excludeDeleted": True, "projectFilesOnly": True},
+        )
+
+    def test_get_folder_details_normalizes_project_and_preserves_headers(self):
+        payload = {"id": "folder-id"}
+        self.base.transport.get.return_value = self.response({"data": payload})
+
+        result = self.api.get_folder_details(
+            "project-id",
+            "folder-id",
+            if_modified_since="Thu, 04 Sep 2026 00:00:00 GMT",
+            user_id="user-id",
+        )
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/folders/folder-id",
+            headers={
+                **self.headers,
+                "x-user-id": "user-id",
+                "If-Modified-Since": "Thu, 04 Sep 2026 00:00:00 GMT",
+            },
+        )
+
+    def test_get_folder_contents_uses_valid_path_and_query_parameters(self):
+        self.base.transport.get.return_value = self.response(
+            {"data": [{"type": "items", "id": "item-id"}]}
+        )
+
+        result = self.api.get_folder_contents(
+            "project-id",
+            "folder-id",
+            filter_type="items",
+            page_number=2,
+            page_limit=50,
+            include_hidden=True,
+        )
+
+        self.assertEqual(result, [{"type": "items", "id": "item-id"}])
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/folders/folder-id/contents",
+            headers={
+                **self.headers,
+                "Content-Type": "application/json",
+            },
+            params={
+                "filter[type]": "items",
+                "page[number]": 2,
+                "page[limit]": 50,
+                "includeHidden": "true",
+            },
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
