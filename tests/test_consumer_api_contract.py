@@ -136,10 +136,6 @@ def test_patch_project_users_preserves_bulk_consumer_call_shape():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Peritas-Portal calls the missing account_users.get_user compatibility alias",
-)
 def test_account_users_get_user_compatibility_alias():
     api = account_users_api()
 
