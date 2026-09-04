@@ -54,4 +54,3 @@ class HttpTransport:
 
     def close(self):
         self.session.close()
-
