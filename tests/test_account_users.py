@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import os
+import requests
 import sys
 
 # Add the parent directory to the path so we can import the acc_sdk module
@@ -18,6 +19,7 @@ class TestAccAccountUsersApi(unittest.TestCase):
         self.mock_base.company_id = "test_company_id"
         self.mock_base.get_2leggedToken.return_value = "test_token"
         self.mock_base.user_info = {"uid": "test_user_id"}
+        self.mock_base.transport = requests
 
         # Create an instance of AccAccountUsersApi with the mock base
         self.api = AccAccountUsersApi(self.mock_base)

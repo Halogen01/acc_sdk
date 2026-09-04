@@ -1,4 +1,3 @@
-import requests
 from .authentication import Authentication
 
 class AccBase:
@@ -18,6 +17,7 @@ class AccBase:
         """
         
         self.auth_client = auth_client
+        self.transport = auth_client.transport
         self.company_id = None
 
         self.account_id = account_id
@@ -85,7 +85,7 @@ class AccBase:
         
         headers = {"Content-Type": "application/json", 
                    "Authorization": f"Bearer {self.get_2leggedToken()}"}
-        response = requests.get(
+        response = self.transport.get(
             f"https://developer.api.autodesk.com/hq/v1/accounts/{self.account_id}/users/search?email={email}&limit=1",
             headers=headers,
         )
@@ -109,7 +109,7 @@ class AccBase:
             str: Company ID
         """
         headers = {"Authorization": f"Bearer {self.get_private_token()}"}
-        response = requests.get(
+        response = self.transport.get(
             f"https://developer.api.autodesk.com/construction/admin/v1/accounts/{self.account_id}/companies", 
             headers=headers
         )
@@ -127,7 +127,7 @@ class AccBase:
             str: The hub ID
         """
         headers = { "Authorization": f"Bearer {self.get_private_token()}" }
-        response = requests.get(
+        response = self.transport.get(
             "https://developer.api.autodesk.com/project/v1/hubs", headers=headers
         )
 
@@ -147,5 +147,3 @@ class AccBase:
             return hub_id, hub_id.split("b.")[1]
         else:
             return None
-
-    

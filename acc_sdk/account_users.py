@@ -1,5 +1,4 @@
 # accapi/account_users.py
-import requests
 from .base import AccBase
 
 class AccAccountUsersApi:
@@ -62,7 +61,7 @@ class AccAccountUsersApi:
         if fields:
             request_kwargs["params"] = {"fields": fields}
 
-        response = requests.get(
+        response = self.base.transport.get(
             f"{self.base_url}/accounts/{self.base.account_id}/users/{user_id}",
             **request_kwargs,
         )
@@ -101,7 +100,7 @@ class AccAccountUsersApi:
         
         headers = {"Content-Type": "application/json", 
                    "Authorization": f"Bearer {self.base.get_2leggedToken()}"}
-        response = requests.get(
+        response = self.base.transport.get(
             f"{self.base_url}/accounts/{self.base.account_id}/users/search?email={email}&limit=1",
             headers=headers,
         )
@@ -161,7 +160,7 @@ class AccAccountUsersApi:
 
         all_users = []
         while True:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code == 200:
                 users = response.json()
                 if not users:
@@ -223,7 +222,7 @@ class AccAccountUsersApi:
 
         all_userid_projects = []
         while True:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code == 200:
                 userid_projects = response.json()['results']
                 if not userid_projects:
@@ -286,7 +285,7 @@ class AccAccountUsersApi:
 
         all_user_products = []
         while True:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code == 200:
                 user_products = response.json()['results']
                 if not user_products:
@@ -356,7 +355,7 @@ class AccAccountUsersApi:
         params["offset"] = 0
         all_users = []
         while True:
-            response = requests.get(base_url, headers=headers, params=params)
+            response = self.base.transport.get(base_url, headers=headers, params=params)
 
             if response.status_code == 200:
                 users = response.json()
@@ -413,7 +412,7 @@ class AccAccountUsersApi:
             "User-Id": self.user_id
         }
         
-        response = requests.post(
+        response = self.base.transport.post(
             f"{self.base_url}/accounts/{self.base.account_id}/users",
             headers=headers,
             json=user,
@@ -487,7 +486,7 @@ class AccAccountUsersApi:
             "Authorization": f"Bearer {token}",
             "User-Id": self.user_id,
         }
-        response = requests.post(
+        response = self.base.transport.post(
             f"{self.base_url}/accounts/{self.base.account_id}/users/import",
             headers=headers,
             json=users,
@@ -550,7 +549,7 @@ class AccAccountUsersApi:
             "Authorization": f"Bearer {self.base.get_2leggedToken()}",
             "User-Id": self.user_id,
         }
-        response = requests.patch(
+        response = self.base.transport.patch(
             f"{self.base_url}/accounts/{self.base.account_id}/users/{user_id}",
             headers=headers,
             json=body,
