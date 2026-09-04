@@ -1,5 +1,6 @@
 import requests
 import json
+from urllib.parse import urljoin
 from .base import AccBase
 
 
@@ -26,7 +27,7 @@ class AccDataManagementApi:
             the user_id.
         """
         url = "https://developer.api.autodesk.com/project/v1/hubs"
-        headers = {"Authorization:": f"Bearer {self.base.get_private_token()}"}
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
@@ -38,7 +39,7 @@ class AccDataManagementApi:
         if filter_extension_type:
             params["filter[extension.type]"] = filter_extension_type
             
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         if response.status_code == 200:
             hubs_data = response.json().get("data", [])
             return hubs_data
@@ -57,16 +58,16 @@ class AccDataManagementApi:
             dict: The details of the hub.
         """ 
         
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}"
-        headers = {"Authorization:": f"Bearer {self.base.get_private_token()}"}
+        if not hub_id.startswith("b."):
+            hub_id = "b." + hub_id
+
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}"
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
 
         if user_id:
             headers["x-user-id"] = user_id
 
-        if not hub_id.startswith("b."):
-            hub_id = "b." + hub_id
-
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             hub_data = response.json().get("data", {})
             return hub_data            
@@ -91,7 +92,7 @@ class AccDataManagementApi:
         if not hub_id.startswith("b."):
             hub_id = "b." + hub_id
             
-        base_url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects"
+        base_url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects"
                 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
@@ -102,7 +103,9 @@ class AccDataManagementApi:
 
         all_results = []
         while base_url:
-            response = requests.get(base_url, headers=headers, params=query_params)
+            response = self.base.transport.get(
+                base_url, headers=headers, params=query_params
+            )
             response.raise_for_status()  # Raise an exception for HTTP errors
             data = response.json()
             if response.status_code != 200:
@@ -113,8 +116,9 @@ class AccDataManagementApi:
             # Check for the next link in the pagination
             base_url = None
             if "links" in data and "next" in data["links"] and follow_pagination:
-                base_url = (
-                    "https://developer.api.autodesk.com" + data["links"]["next"]["href"]
+                base_url = urljoin(
+                    "https://developer.api.autodesk.com",
+                    data["links"]["next"]["href"],
                 )
                 # Clear query params after the first request to follow the next link properly
                 query_params = {}
@@ -141,13 +145,13 @@ class AccDataManagementApi:
             hub_id = "b." + hub_id
         if not project_id.startswith("b."):
             project_id = "b." + project_id
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}"
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             project_data = response.json()['data']
             return project_data
@@ -172,12 +176,12 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}/hub"        
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}/hub"
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             hub_data = response.json().get("data", {})
             return hub_data
