@@ -37,13 +37,14 @@ class AccAccountUsersApi:
         self.user_id = self.base.user_info.get('uid')
         self.base_url_const = "https://developer.api.autodesk.com/construction/admin/v1"
 
-    def get_user_by_id(self, user_id)->dict:
+    def get_user_by_id(self, user_id, fields=None)->dict:
         """
         Get a user by user ID.
         https://aps.autodesk.com/en/docs/acc/v1/reference/http/users-:user_id-GET/
 
         Args:
             user_id (str): The user ID to lookup the user by.
+            fields (str | list[str], optional): Fields to include in the response.
 
         Returns:
             dict: user object
@@ -57,14 +58,22 @@ class AccAccountUsersApi:
         
         headers = {"Content-Type": "application/json", 
                    "Authorization": f"Bearer {self.base.get_2leggedToken()}"}
+        request_kwargs = {"headers": headers}
+        if fields:
+            request_kwargs["params"] = {"fields": fields}
+
         response = requests.get(
             f"{self.base_url}/accounts/{self.base.account_id}/users/{user_id}",
-            headers=headers,
+            **request_kwargs,
         )
         if response.status_code == 200:
             return response.json()
         else:
             response.raise_for_status()
+
+    def get_user(self, user_id, fields=None)->dict:
+        """Compatibility alias used by existing Halogen/Peritas consumers."""
+        return self.get_user_by_id(user_id=user_id, fields=fields)
 
     def get_user_by_email(self, email):
         """
