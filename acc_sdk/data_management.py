@@ -2,15 +2,40 @@ import requests
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import quote, urljoin
 from .base import AccBase
+
+
+class _FileSegment:
+    """Read no more than one bounded segment from an open binary file."""
+
+    def __init__(self, file_object, length: int):
+        self.file_object = file_object
+        self.length = length
+        self.remaining = length
+
+    def __len__(self):
+        return self.length
+
+    def read(self, size: int = -1):
+        if self.remaining == 0:
+            return b""
+        if size < 0 or size > self.remaining:
+            size = self.remaining
+        data = self.file_object.read(size)
+        self.remaining -= len(data)
+        return data
 
 
 class AccDataManagementApi:
     OSS_STORAGE_URN_PREFIX = "urn:adsk.objects:os.object:"
     DEFAULT_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
     MAX_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024
+    RETRYABLE_UPLOAD_STATUSES = frozenset({429, 500, 502, 503, 504})
+    MAX_UPLOAD_RETRIES = 5
+    MAX_UPLOAD_RETRY_DELAY = 30.0
 
     def __init__(self, base: AccBase):
         self.base = base
@@ -311,6 +336,83 @@ class AccDataManagementApi:
         response = self.base.transport.post(url, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()
+
+    def upload_file_part(
+        self,
+        signed_url: str,
+        source_path,
+        offset: int,
+        length: int,
+        max_retries: int = 2,
+    ) -> str | None:
+        """Upload one bounded file segment to an S3 signed URL."""
+        if not isinstance(signed_url, str) or not signed_url:
+            raise ValueError("signed_url is required")
+        if not isinstance(source_path, (str, os.PathLike)) or not os.fspath(
+            source_path
+        ):
+            raise ValueError("source_path is required")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if isinstance(length, bool) or not isinstance(length, int) or length < 0:
+            raise ValueError("length must be a non-negative integer")
+        if (
+            isinstance(max_retries, bool)
+            or not isinstance(max_retries, int)
+            or not 0 <= max_retries <= self.MAX_UPLOAD_RETRIES
+        ):
+            raise ValueError(
+                f"max_retries must be an integer from 0 to {self.MAX_UPLOAD_RETRIES}"
+            )
+
+        source = Path(source_path)
+        if not source.is_file():
+            raise ValueError("source_path must identify an existing file")
+        file_size = source.stat().st_size
+        if offset + length > file_size:
+            raise ValueError("The requested file segment exceeds the source file")
+
+        headers = {"Content-Length": str(length)}
+        for attempt in range(max_retries + 1):
+            try:
+                with source.open("rb") as source_file:
+                    source_file.seek(offset)
+                    response = self.base.transport.put(
+                        signed_url,
+                        headers=headers,
+                        data=_FileSegment(source_file, length),
+                    )
+            except (requests.ConnectionError, requests.Timeout):
+                if attempt == max_retries:
+                    raise
+                time.sleep(self._upload_retry_delay(None, attempt))
+                continue
+
+            try:
+                if (
+                    response.status_code in self.RETRYABLE_UPLOAD_STATUSES
+                    and attempt < max_retries
+                ):
+                    time.sleep(self._upload_retry_delay(response, attempt))
+                    continue
+                response.raise_for_status()
+                return response.headers.get("ETag")
+            finally:
+                response.close()
+
+        raise RuntimeError("Upload retry loop ended unexpectedly")
+
+    def _upload_retry_delay(self, response, attempt: int) -> float:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    return min(
+                        max(float(retry_after), 0.0), self.MAX_UPLOAD_RETRY_DELAY
+                    )
+                except (TypeError, ValueError):
+                    pass
+        return min(0.5 * (2**attempt), self.MAX_UPLOAD_RETRY_DELAY)
 
     ###########################################################################
     # Hubs
