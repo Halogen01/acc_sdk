@@ -73,13 +73,16 @@ class AccSheetsApi:
         data = {"name": name, "issuanceDate": f"{issuance_date}T00:00:00.000Z"}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 201:
@@ -120,13 +123,13 @@ class AccSheetsApi:
             
         token = self.base.get_private_token()
         # Set the headers
-        headers = {"Authorization": token}
+        headers = {"Authorization": f"Bearer {token}"}
 
         # API endpoint with the project_id
         url = f"{self.base_url}/projects/{project_id}/version-sets"
 
         # Perform the GET request
-        response = requests.get(url, headers=headers, query_params=query_params)
+        response = self.base.transport.get(url, headers=headers, params=query_params)
 
         # Check the response
         if response.status_code == 200:
@@ -178,13 +181,16 @@ class AccSheetsApi:
         data = {"name": name, "issuanceDate": f"{issuance_date}T00:00:00.000Z"}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets/{version_set_id}"
 
         # Perform the PATCH request
-        response = requests.patch(url, headers=headers, json=data)
+        response = self.base.transport.patch(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 200:
@@ -224,13 +230,16 @@ class AccSheetsApi:
         data = {"ids": ids}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets:batch-get"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 200:
@@ -264,13 +273,13 @@ class AccSheetsApi:
         token = self.base.get_private_token()
 
         # Set the headers
-        headers = {"Authorization": token}
+        headers = {"Authorization": f"Bearer {token}"}
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets/{version_set_id}"
 
         # Perform the DELETE request
-        response = requests.delete(url, headers=headers)
+        response = self.base.transport.delete(url, headers=headers)
 
         # Check the response
         if response.status_code == 204:
@@ -308,13 +317,16 @@ class AccSheetsApi:
         data = {"ids": ids}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets:batch-delete"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 204:
