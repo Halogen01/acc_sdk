@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, mock_open, patch
 
 from acc_sdk.base import AccBase
 from acc_sdk.sheets import AccSheetsApi
@@ -98,6 +98,100 @@ class TestAccSheetsVersionSets(unittest.TestCase):
             f"{self.api.base_url}/projects/project-id/version-sets:batch-delete",
             headers=self.json_headers,
             json={"ids": ["one", "two"]},
+        )
+
+
+class TestAccSheetsUploads(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_private_token.return_value = "private-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccSheetsApi(self.base)
+        self.json_headers = {
+            "Authorization": "Bearer private-token",
+            "Content-Type": "application/json",
+        }
+
+    def response(self, status_code, payload=None):
+        response = MagicMock(status_code=status_code)
+        response.json.return_value = payload
+        return response
+
+    def test_upload_file_to_autodesk_returns_storage_keys(self):
+        self.base.transport.post.return_value = self.response(
+            201, {"urn": "urn:adsk.objects:os.object:bucket-key/folder/sheet.pdf"}
+        )
+
+        result = self.api.upload_file_to_autodesk("project-id", "sheet.pdf")
+
+        self.assertEqual(result, ("bucket-key", "folder/sheet.pdf"))
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/storage",
+            headers=self.json_headers,
+            json={"fileName": "sheet.pdf"},
+        )
+
+    def test_get_signed_s3_upload_encodes_object_key(self):
+        payload = {"urls": ["https://example.com/signed-upload"]}
+        self.base.transport.get.return_value = self.response(200, payload)
+
+        result = self.api.get_signed_s3_upload("bucket-key", "folder/sheet 1.pdf")
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/oss/v2/buckets/bucket-key/objects/folder%2Fsheet%201.pdf/signeds3upload",
+            headers={"Authorization": "Bearer private-token"},
+        )
+
+    @patch("acc_sdk.sheets.os.path.isfile", return_value=True)
+    @patch("acc_sdk.sheets.open", new_callable=mock_open, read_data=b"pdf")
+    def test_upload_pdf_to_signed_url_uses_shared_transport(
+        self, file_open, _is_file
+    ):
+        self.base.transport.put.return_value = self.response(200)
+
+        result = self.api.upload_pdf_to_signed_url(
+            "https://example.com/signed-upload", "sheet.pdf"
+        )
+
+        self.assertEqual(result, 200)
+        self.base.transport.put.assert_called_once_with(
+            "https://example.com/signed-upload", data=file_open()
+        )
+
+    def test_complete_s3_upload_encodes_object_key(self):
+        payload = {"status": "complete"}
+        self.base.transport.post.return_value = self.response(200, payload)
+
+        result = self.api.complete_s3_upload(
+            "bucket-key", "folder/sheet 1.pdf", "upload-key"
+        )
+
+        self.assertEqual(result, payload)
+        self.base.transport.post.assert_called_once_with(
+            "https://developer.api.autodesk.com/oss/v2/buckets/bucket-key/objects/folder%2Fsheet%201.pdf/signeds3upload",
+            headers=self.json_headers,
+            json={"uploadKey": "upload-key"},
+        )
+
+    def test_post_uploads_preserves_payload(self):
+        files = [
+            {
+                "storageType": "OSS",
+                "storageUrn": "urn:adsk.objects:os.object:bucket/sheet.pdf",
+                "name": "sheet.pdf",
+            }
+        ]
+        payload = {"id": "upload-id"}
+        self.base.transport.post.return_value = self.response(201, payload)
+
+        result = self.api.post_uploads("project-id", "version-set-id", files)
+
+        self.assertEqual(result, payload)
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/uploads",
+            headers=self.json_headers,
+            json={"versionSetId": "version-set-id", "files": files},
         )
 
 

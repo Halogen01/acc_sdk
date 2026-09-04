@@ -1,6 +1,7 @@
 import requests
 import os
 from datetime import datetime
+from urllib.parse import quote
 from .base import AccBase
 
 
@@ -361,10 +362,13 @@ class AccSheetsApi:
         """
         token = self.base.get_private_token()
         url = f"{self.base_url}/projects/{project_id}/storage"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"fileName": file_name}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 201:
             response.raise_for_status()
@@ -402,10 +406,11 @@ class AccSheetsApi:
             ```
         """
         token = self.base.get_private_token()
-        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{object_key}/signeds3upload"
-        headers = {"Authorization": token}
+        encoded_object_key = quote(object_key, safe="")
+        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        headers = {"Authorization": f"Bearer {token}"}
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code != 200:
             response.raise_for_status()
@@ -442,7 +447,7 @@ class AccSheetsApi:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         with open(file_path, "rb") as file:
-            response = requests.put(signed_url, data=file)
+            response = self.base.transport.put(signed_url, data=file)
 
             if response.status_code != 200:
                 response.raise_for_status()
@@ -474,11 +479,15 @@ class AccSheetsApi:
             ```
         """
         token = self.base.get_private_token()
-        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{object_key}/signeds3upload"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        encoded_object_key = quote(object_key, safe="")
+        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"uploadKey": upload_key}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 200:
             response.raise_for_status()
@@ -534,10 +543,13 @@ class AccSheetsApi:
                 )
 
         url = f"{self.base_url}/projects/{project_id}/uploads"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"versionSetId": version_set_id, "files": files}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 201:
             response.raise_for_status()
