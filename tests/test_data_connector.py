@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import os
+import requests
 import sys
 
 # Add the parent directory to the path so we can import the acc_sdk module
@@ -17,6 +18,7 @@ class TestAccDataConnectorApi(unittest.TestCase):
         self.mock_base.account_id = "test_account_id"
         self.mock_base.get_private_token.return_value = "test_token"
         self.mock_base.get_3leggedToken.return_value = "test_token"
+        self.mock_base.transport = requests
 
         # Create an instance of AccDataConnectorApi with the mock base
         self.api = AccDataConnectorApi(self.mock_base)
@@ -170,6 +172,31 @@ class TestAccDataConnectorApi(unittest.TestCase):
             self.api.post_request(data=test_data)
         self.assertTrue(
             "effectiveTo is required for recurring schedules" in str(context.exception)
+        )
+
+    @patch("requests.patch")
+    def test_patch_request(self, mock_patch):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "id": "request-id",
+            "description": "Updated Data Extract",
+        }
+        mock_patch.return_value = response
+
+        result = self.api.patch_request(
+            request_id="request-id",
+            data={"description": "Updated Data Extract"},
+        )
+
+        self.assertEqual(result["description"], "Updated Data Extract")
+        mock_patch.assert_called_once_with(
+            f"{self.api.base_address}/accounts/test_account_id/requests/request-id",
+            headers={
+                "Authorization": "Bearer test_token",
+                "Content-Type": "application/json",
+            },
+            json={"description": "Updated Data Extract"},
         )
 
     @patch("requests.get")
@@ -1160,7 +1187,7 @@ class TestAccDataConnectorApi(unittest.TestCase):
         mock_response.json.return_value = {
             "size": "123456",
             "name": "admin_companies.csv",
-            "signedUrl": "https://bim360dc-p-ue1-extracts.s3.amazonaws.com/data/9be6b2cd-e9e8-4861-aa45-c96668a9f6bd/d023d0cf-b603-4de9-b240-a0e8a85bbf8d/autodesk_data_extract.zip?AWSAccessKeyId=ASIAWZ7KRFT5TZSCKIYO&Expires=1604690406&Signature=cb5HR%2FthOATYIAqW41ojbfptMsM%3D&x-amz-security-token=IQoJb3JpZ2luX2VjELT%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIHQdYa9Z%2BhS3u5EmRfEoz1KFwm2xCvLK6pH1Go2q88%2BWAiEAy7KMbb%2FKBww1XWxR0B%2FepB0Syt6jOhXTahznLrCWKcYq2gEIHBACGgw0NjgxMDY0MjM1NDciDHewqYuFoS8GY2PlZCq3AZG8jsIKx5egqYARC2N%2F7%2B72nkATTV6PwomhMOsAb9eZhIBCR%2F861wvtM1%2B4gEfu8LN9gWMNI%2BvmHcWC92kC1lujXM1Klpq8KksSxN8%2Bt5aurFPwZ465iespRnEHKB7jX2KUzCVDPCpZ7NDTvcsy0TdqLU82L0p%2Bw6fTT0QhGuykRuhn%2FURLbtzVHvx4wi3R2kSEJ9DWGkAaWR96h76vCFDaC9o2VmLEjKww88YunnYKQcAqIhGEBTD2vpb9BTrgAVGy7Cavc8LDgwuoS7LBt%2FmE6iPohyfILcksPL5NYl3yvaUhYW%2FX9w1mgLgpnuEt4rcdcrUOTcOdjRFmqvA9%2FVPFXD%2FCWxzDRU6V3U%2BC1dZi5Y4lV3AfodZyhsJI9aSkX2D0xDMpuV%2FDiX0HyCCVk3awuCQDfPtlWqbMVzW9zzO5d6JBThIIxdEGq1Nwe677anh1WQGY%2Fuemcc4fyZRTx%2Br0i%2B8Z35YtR0pEKfvp7GQhV7d%2FSfh%2FYL58QMvvciH4yBqkcMba8SwDJQQV03Q%2FrQX2vqVOq%2BSFCijaXalvPjQp",
+            "signedUrl": "https://example.com/signed-download?signature=redacted",
         }
         mock_get.return_value = mock_response
 
