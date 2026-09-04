@@ -1,6 +1,6 @@
-import requests
 import os
 from datetime import datetime
+from urllib.parse import quote
 from .base import AccBase
 
 
@@ -73,13 +73,16 @@ class AccSheetsApi:
         data = {"name": name, "issuanceDate": f"{issuance_date}T00:00:00.000Z"}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 201:
@@ -120,13 +123,13 @@ class AccSheetsApi:
             
         token = self.base.get_private_token()
         # Set the headers
-        headers = {"Authorization": token}
+        headers = {"Authorization": f"Bearer {token}"}
 
         # API endpoint with the project_id
         url = f"{self.base_url}/projects/{project_id}/version-sets"
 
         # Perform the GET request
-        response = requests.get(url, headers=headers, query_params=query_params)
+        response = self.base.transport.get(url, headers=headers, params=query_params)
 
         # Check the response
         if response.status_code == 200:
@@ -178,13 +181,16 @@ class AccSheetsApi:
         data = {"name": name, "issuanceDate": f"{issuance_date}T00:00:00.000Z"}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets/{version_set_id}"
 
         # Perform the PATCH request
-        response = requests.patch(url, headers=headers, json=data)
+        response = self.base.transport.patch(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 200:
@@ -224,13 +230,16 @@ class AccSheetsApi:
         data = {"ids": ids}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets:batch-get"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 200:
@@ -264,13 +273,13 @@ class AccSheetsApi:
         token = self.base.get_private_token()
 
         # Set the headers
-        headers = {"Authorization": token}
+        headers = {"Authorization": f"Bearer {token}"}
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets/{version_set_id}"
 
         # Perform the DELETE request
-        response = requests.delete(url, headers=headers)
+        response = self.base.transport.delete(url, headers=headers)
 
         # Check the response
         if response.status_code == 204:
@@ -308,13 +317,16 @@ class AccSheetsApi:
         data = {"ids": ids}
 
         # Set the headers
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
         # API endpoint
         url = f"{self.base_url}/projects/{project_id}/version-sets:batch-delete"
 
         # Perform the POST request
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
 
         # Check the response
         if response.status_code == 204:
@@ -349,10 +361,13 @@ class AccSheetsApi:
         """
         token = self.base.get_private_token()
         url = f"{self.base_url}/projects/{project_id}/storage"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"fileName": file_name}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 201:
             response.raise_for_status()
@@ -390,10 +405,11 @@ class AccSheetsApi:
             ```
         """
         token = self.base.get_private_token()
-        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{object_key}/signeds3upload"
-        headers = {"Authorization": token}
+        encoded_object_key = quote(object_key, safe="")
+        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        headers = {"Authorization": f"Bearer {token}"}
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code != 200:
             response.raise_for_status()
@@ -430,7 +446,7 @@ class AccSheetsApi:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         with open(file_path, "rb") as file:
-            response = requests.put(signed_url, data=file)
+            response = self.base.transport.put(signed_url, data=file)
 
             if response.status_code != 200:
                 response.raise_for_status()
@@ -462,11 +478,15 @@ class AccSheetsApi:
             ```
         """
         token = self.base.get_private_token()
-        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{object_key}/signeds3upload"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        encoded_object_key = quote(object_key, safe="")
+        url = f"https://developer.api.autodesk.com/oss/v2/buckets/{bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"uploadKey": upload_key}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 200:
             response.raise_for_status()
@@ -522,10 +542,13 @@ class AccSheetsApi:
                 )
 
         url = f"{self.base_url}/projects/{project_id}/uploads"
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
         payload = {"versionSetId": version_set_id, "files": files}
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
 
         if response.status_code != 201:
             response.raise_for_status()
@@ -585,7 +608,7 @@ class AccSheetsApi:
         token = self.base.get_private_token()
 
         # Set the headers
-        headers = {"Authorization": token}
+        headers = {"Authorization": f"Bearer {token}"}
         if user_id:
             headers["x-user-id"] = user_id
 
@@ -595,7 +618,9 @@ class AccSheetsApi:
         sheets = []
         while url:
             # Perform the GET request
-            response = requests.get(url, headers=headers, query_params=query_params)
+            response = self.base.transport.get(
+                url, headers=headers, params=query_params
+            )
 
             # Check the response
             if response.status_code !=200:
@@ -630,6 +655,9 @@ class AccSheetsApi:
             print(sheets)  # Print the retrieved sheets
             ```
         """
+        if len(sheet_ids) > 200:
+            raise ValueError("The maximum number of sheet IDs that can be batched is 200.")
+
         url = (
             f"https://developer.api.autodesk.com/construction/sheets/v1/"
             f"projects/{project_id}/sheets:batch-get"
@@ -640,7 +668,7 @@ class AccSheetsApi:
         }
         payload = {"ids": sheet_ids}
         
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
         response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code.
         
         # Return only the 'data' field of the response.
@@ -696,7 +724,7 @@ class AccSheetsApi:
             "updates": updates
         }
         
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
         response.raise_for_status()  
 
         data = response.json()
@@ -738,7 +766,7 @@ class AccSheetsApi:
             "ids": ids            
         }
         
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
         response.raise_for_status()  
 
     def batch_restore_sheets(self, project_id: str, ids: list, user_id = None) -> list:
@@ -778,7 +806,7 @@ class AccSheetsApi:
             "ids": ids            
         }
         
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.base.transport.post(url, headers=headers, json=payload)
         response.raise_for_status()          
 
     ###########################################################################
@@ -814,6 +842,9 @@ class AccSheetsApi:
             print(export_job["id"])  # Print the export job ID
             ```
         """
+        if len(sheets) > 1000:
+            raise ValueError("The maximum number of sheets that can be exported is 1000.")
+
         # Retrieve the OAuth token from the base class.
         token = self.base.get_private_token()
 
@@ -836,7 +867,7 @@ class AccSheetsApi:
         }
 
         # Perform the POST request to create the export job.
-        response = requests.post(url, json=payload, headers=headers)
+        response = self.base.transport.post(url, json=payload, headers=headers)
 
         # Check for a successful response (HTTP 202 Accepted).
         if response.status_code == 202:
@@ -889,7 +920,7 @@ class AccSheetsApi:
         url = f"{self.base_url}/projects/{project_id}/exports/{export_id}"
 
         # Perform the GET request to retrieve export job details.
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         # Check for a successful response (HTTP 200 OK).
         if response.status_code == 200:
@@ -953,7 +984,7 @@ class AccSheetsApi:
                 params["limit"] = limit
 
         # Initial API request.
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
 
@@ -965,7 +996,7 @@ class AccSheetsApi:
             pagination = data.get("pagination", {})
             next_url = pagination.get("nextUrl")
             while next_url:
-                page_response = requests.get(next_url, headers=headers)
+                page_response = self.base.transport.get(next_url, headers=headers)
                 page_response.raise_for_status()
                 page_data = page_response.json()
                 results.extend(page_data.get("results", []))
@@ -1008,7 +1039,7 @@ class AccSheetsApi:
         
         url = f"{self.base_url}/projects/{project_id}/collections/{collection_id}"
         
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         response.raise_for_status()
 
         return response.json()
