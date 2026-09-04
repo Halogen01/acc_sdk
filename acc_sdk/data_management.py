@@ -45,6 +45,9 @@ class AccDataManagementApi:
     DATA_MANAGEMENT_RESERVED_FILE_NAME_CHARACTERS = frozenset(
         '<>:"/\\|?*\'\n\r\t\0\f¢™$®'
     )
+    DEFAULT_ITEM_EXTENSION_TYPE = "items:autodesk.bim360:File"
+    DEFAULT_VERSION_EXTENSION_TYPE = "versions:autodesk.bim360:File"
+    DEFAULT_EXTENSION_SCHEMA_VERSION = "1.0"
 
     def __init__(self, base: AccBase):
         self.base = base
@@ -636,6 +639,146 @@ class AccDataManagementApi:
             )
         return storage
 
+    def create_file_item(
+        self,
+        project_id: str,
+        folder_id: str,
+        file_name: str,
+        storage_urn: str,
+        user_id: str = None,
+        item_extension_type: str = DEFAULT_ITEM_EXTENSION_TYPE,
+        version_extension_type: str = DEFAULT_VERSION_EXTENSION_TYPE,
+        extension_schema_version: str = DEFAULT_EXTENSION_SCHEMA_VERSION,
+    ) -> dict:
+        """Create a file item and its first version from uploaded storage.
+
+        The defaults target ACC/BIM 360 Docs. Callers using another Autodesk
+        Data Management service can provide its documented extension types.
+        The complete JSON:API response document is returned.
+        """
+        project_id = self._normalize_data_management_project_id(project_id)
+        self._require_data_management_id(folder_id, "folder")
+        self._validate_data_management_file_name(file_name)
+        self._require_data_management_id(storage_urn, "storage URN")
+        self._validate_data_management_extension(
+            item_extension_type, "items", extension_schema_version
+        )
+        self._validate_data_management_extension(
+            version_extension_type, "versions", extension_schema_version
+        )
+
+        payload = {
+            "jsonapi": {"version": "1.0"},
+            "data": {
+                "type": "items",
+                "attributes": {
+                    "displayName": file_name,
+                    "extension": {
+                        "type": item_extension_type,
+                        "version": extension_schema_version,
+                    },
+                },
+                "relationships": {
+                    "tip": {"data": {"type": "versions", "id": "1"}},
+                    "parent": {
+                        "data": {"type": "folders", "id": folder_id}
+                    },
+                },
+            },
+            "included": [
+                {
+                    "type": "versions",
+                    "id": "1",
+                    "attributes": {
+                        "name": file_name,
+                        "extension": {
+                            "type": version_extension_type,
+                            "version": extension_schema_version,
+                        },
+                    },
+                    "relationships": {
+                        "storage": {
+                            "data": {"type": "objects", "id": storage_urn}
+                        }
+                    },
+                }
+            ],
+        }
+        return self._post_data_management_jsonapi(
+            project_id, "items", payload, user_id
+        )
+
+    def create_file_version(
+        self,
+        project_id: str,
+        item_id: str,
+        file_name: str,
+        storage_urn: str,
+        user_id: str = None,
+        version_extension_type: str = DEFAULT_VERSION_EXTENSION_TYPE,
+        extension_schema_version: str = DEFAULT_EXTENSION_SCHEMA_VERSION,
+    ) -> dict:
+        """Create the next file version from an uploaded storage object.
+
+        The complete JSON:API response document is returned. The server, not
+        the caller, determines the new file version number.
+        """
+        project_id = self._normalize_data_management_project_id(project_id)
+        self._require_data_management_id(item_id, "item")
+        self._validate_data_management_file_name(file_name)
+        self._require_data_management_id(storage_urn, "storage URN")
+        self._validate_data_management_extension(
+            version_extension_type, "versions", extension_schema_version
+        )
+
+        payload = {
+            "jsonapi": {"version": "1.0"},
+            "data": {
+                "type": "versions",
+                "attributes": {
+                    "name": file_name,
+                    "extension": {
+                        "type": version_extension_type,
+                        "version": extension_schema_version,
+                    },
+                },
+                "relationships": {
+                    "item": {"data": {"type": "items", "id": item_id}},
+                    "storage": {
+                        "data": {"type": "objects", "id": storage_urn}
+                    },
+                },
+            },
+        }
+        return self._post_data_management_jsonapi(
+            project_id, "versions", payload, user_id
+        )
+
+    def _post_data_management_jsonapi(
+        self,
+        project_id: str,
+        resource_path: str,
+        payload: dict,
+        user_id: str = None,
+    ) -> dict:
+        url = (
+            "https://developer.api.autodesk.com/data/v1/projects/"
+            f"{quote(project_id, safe='')}/{resource_path}"
+        )
+        response = self.base.transport.post(
+            url,
+            headers=self._data_management_write_headers(user_id),
+            json=payload,
+        )
+        response.raise_for_status()
+        document = response.json()
+        resource = document.get("data") if isinstance(document, dict) else None
+        if not isinstance(resource, dict) or not resource.get("id"):
+            raise RuntimeError(
+                f"Data Management did not return a {resource_path[:-1]} resource ID"
+            )
+        return document
+
     @staticmethod
     def _normalize_data_management_project_id(project_id: str) -> str:
         if not isinstance(project_id, str) or not project_id:
@@ -658,6 +801,24 @@ class AccDataManagementApi:
         if user_id is not None:
             headers["x-user-id"] = user_id
         return headers
+
+    @staticmethod
+    def _require_data_management_id(value: str, label: str) -> None:
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"A {label} ID is required")
+
+    @staticmethod
+    def _validate_data_management_extension(
+        extension_type: str, resource_type: str, schema_version: str
+    ) -> None:
+        if not isinstance(extension_type, str) or not extension_type.startswith(
+            f"{resource_type}:"
+        ):
+            raise ValueError(
+                f"The extension type must start with '{resource_type}:'"
+            )
+        if not isinstance(schema_version, str) or not schema_version:
+            raise ValueError("An extension schema version is required")
 
     @classmethod
     def _validate_data_management_file_name(cls, file_name: str) -> None:

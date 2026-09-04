@@ -134,5 +134,228 @@ class TestCreateStorageLocation(unittest.TestCase):
         self.base.transport.post.assert_called_once()
 
 
+class TestCreateFileResources(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_private_token.return_value = "private-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccDataManagementApi(self.base)
+
+    def response(self, payload):
+        response = MagicMock()
+        response.json.return_value = payload
+        self.base.transport.post.return_value = response
+        return response
+
+    def test_creates_acc_file_item_and_first_version(self):
+        document = {
+            "data": {"type": "items", "id": "item-id"},
+            "included": [{"type": "versions", "id": "version-id"}],
+        }
+        response = self.response(document)
+
+        result = self.api.create_file_item(
+            "project-id",
+            "folder-id",
+            "model.rvt",
+            "urn:adsk.objects:os.object:wip.dm.prod/model.rvt",
+            user_id="user-id",
+        )
+
+        self.assertIs(result, document)
+        response.raise_for_status.assert_called_once_with()
+        self.base.transport.post.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/"
+            "b.project-id/items",
+            headers={
+                "Authorization": "Bearer private-token",
+                "Content-Type": "application/vnd.api+json",
+                "x-user-id": "user-id",
+            },
+            json={
+                "jsonapi": {"version": "1.0"},
+                "data": {
+                    "type": "items",
+                    "attributes": {
+                        "displayName": "model.rvt",
+                        "extension": {
+                            "type": "items:autodesk.bim360:File",
+                            "version": "1.0",
+                        },
+                    },
+                    "relationships": {
+                        "tip": {
+                            "data": {"type": "versions", "id": "1"}
+                        },
+                        "parent": {
+                            "data": {"type": "folders", "id": "folder-id"}
+                        },
+                    },
+                },
+                "included": [
+                    {
+                        "type": "versions",
+                        "id": "1",
+                        "attributes": {
+                            "name": "model.rvt",
+                            "extension": {
+                                "type": "versions:autodesk.bim360:File",
+                                "version": "1.0",
+                            },
+                        },
+                        "relationships": {
+                            "storage": {
+                                "data": {
+                                    "type": "objects",
+                                    "id": "urn:adsk.objects:os.object:"
+                                    "wip.dm.prod/model.rvt",
+                                }
+                            }
+                        },
+                    }
+                ],
+            },
+        )
+
+    def test_file_item_allows_service_specific_extensions(self):
+        self.response({"data": {"type": "items", "id": "item-id"}})
+
+        self.api.create_file_item(
+            "project-id",
+            "folder-id",
+            "model.dwg",
+            "storage-urn",
+            item_extension_type="items:autodesk.core:File",
+            version_extension_type="versions:autodesk.core:File",
+            extension_schema_version="2.0",
+        )
+
+        payload = self.base.transport.post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["data"]["attributes"]["extension"],
+            {"type": "items:autodesk.core:File", "version": "2.0"},
+        )
+        self.assertEqual(
+            payload["included"][0]["attributes"]["extension"],
+            {"type": "versions:autodesk.core:File", "version": "2.0"},
+        )
+
+    def test_creates_acc_file_version_without_caller_version_number(self):
+        document = {"data": {"type": "versions", "id": "version-id"}}
+        response = self.response(document)
+
+        result = self.api.create_file_version(
+            "b.project-id",
+            "item-id",
+            "model.rvt",
+            "urn:adsk.objects:os.object:wip.dm.prod/model.rvt",
+        )
+
+        self.assertIs(result, document)
+        response.raise_for_status.assert_called_once_with()
+        self.base.transport.post.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/"
+            "b.project-id/versions",
+            headers={
+                "Authorization": "Bearer private-token",
+                "Content-Type": "application/vnd.api+json",
+            },
+            json={
+                "jsonapi": {"version": "1.0"},
+                "data": {
+                    "type": "versions",
+                    "attributes": {
+                        "name": "model.rvt",
+                        "extension": {
+                            "type": "versions:autodesk.bim360:File",
+                            "version": "1.0",
+                        },
+                    },
+                    "relationships": {
+                        "item": {
+                            "data": {"type": "items", "id": "item-id"}
+                        },
+                        "storage": {
+                            "data": {
+                                "type": "objects",
+                                "id": "urn:adsk.objects:os.object:"
+                                "wip.dm.prod/model.rvt",
+                            }
+                        },
+                    },
+                },
+            },
+        )
+
+    def test_item_rejects_invalid_arguments_before_request(self):
+        valid = ("project-id", "folder-id", "model.rvt", "storage-urn")
+        invalid_calls = [
+            (None, *valid[1:]),
+            (valid[0], "", *valid[2:]),
+            (*valid[:2], "bad/name.rvt", valid[3]),
+            (*valid[:3], ""),
+        ]
+
+        for arguments in invalid_calls:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(ValueError):
+                    self.api.create_file_item(*arguments)
+
+        with self.assertRaises(ValueError):
+            self.api.create_file_item(
+                *valid, item_extension_type="versions:autodesk.core:File"
+            )
+        with self.assertRaises(ValueError):
+            self.api.create_file_item(
+                *valid, version_extension_type="items:autodesk.core:File"
+            )
+        with self.assertRaises(ValueError):
+            self.api.create_file_item(*valid, extension_schema_version="")
+        with self.assertRaises(ValueError):
+            self.api.create_file_item(*valid, user_id="")
+
+        self.base.get_private_token.assert_not_called()
+        self.base.transport.post.assert_not_called()
+
+    def test_version_rejects_invalid_arguments_before_request(self):
+        invalid_calls = [
+            ("project-id", "", "model.rvt", "storage-urn"),
+            ("project-id", "item-id", "bad*.rvt", "storage-urn"),
+            ("project-id", "item-id", "model.rvt", ""),
+        ]
+
+        for arguments in invalid_calls:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(ValueError):
+                    self.api.create_file_version(*arguments)
+
+        with self.assertRaises(ValueError):
+            self.api.create_file_version(
+                "project-id",
+                "item-id",
+                "model.rvt",
+                "storage-urn",
+                version_extension_type="items:autodesk.core:File",
+            )
+
+        self.base.get_private_token.assert_not_called()
+        self.base.transport.post.assert_not_called()
+
+    def test_rejects_item_or_version_response_without_resource_id(self):
+        self.response({"data": {"type": "items"}})
+        with self.assertRaisesRegex(RuntimeError, "item resource ID"):
+            self.api.create_file_item(
+                "project-id", "folder-id", "model.rvt", "storage-urn"
+            )
+
+        self.response({"data": {"type": "versions"}})
+        with self.assertRaisesRegex(RuntimeError, "version resource ID"):
+            self.api.create_file_version(
+                "project-id", "item-id", "model.rvt", "storage-urn"
+            )
+
+        self.assertEqual(self.base.transport.post.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
