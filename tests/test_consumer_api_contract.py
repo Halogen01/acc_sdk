@@ -8,6 +8,7 @@ import requests
 from acc_sdk.account_users import AccAccountUsersApi
 from acc_sdk.base import AccBase
 from acc_sdk.project_users import AccProjectUsersApi
+from acc_sdk.transport import HttpTransport
 
 
 MEMBER_PRODUCTS = [
@@ -37,6 +38,7 @@ def project_users_api():
     base = MagicMock(spec=AccBase)
     base.get_private_token.return_value = "access-token"
     base.user_info = {"uid": "admin-user-id"}
+    base.transport = MagicMock(spec=HttpTransport)
     return AccProjectUsersApi(base)
 
 
@@ -54,8 +56,7 @@ def test_product_access_constants_preserve_consumer_values():
     assert AccProjectUsersApi.productadmin == ADMIN_PRODUCTS
 
 
-@patch("acc_sdk.project_users.requests.post")
-def test_post_user_preserves_roles_email_suppression_and_return_shape(mock_post):
+def test_post_user_preserves_roles_email_suppression_and_return_shape():
     api = project_users_api()
     created_user = {
         "id": "project-user-id",
@@ -64,7 +65,7 @@ def test_post_user_preserves_roles_email_suppression_and_return_shape(mock_post)
     }
     response = MagicMock(status_code=201)
     response.json.return_value = created_user
-    mock_post.return_value = response
+    api.base.transport.post.return_value = response
     user = {
         "email": "person@example.com",
         "products": MEMBER_PRODUCTS,
@@ -76,7 +77,7 @@ def test_post_user_preserves_roles_email_suppression_and_return_shape(mock_post)
     result = api.post_user(project_id="project-id", user=user)
 
     assert result == created_user
-    mock_post.assert_called_once_with(
+    api.base.transport.post.assert_called_once_with(
         "https://developer.api.autodesk.com/construction/admin/v1/projects/project-id/users",
         headers={
             "Authorization": "Bearer access-token",
@@ -93,14 +94,13 @@ def test_post_user_preserves_roles_email_suppression_and_return_shape(mock_post)
     )
 
 
-@patch("acc_sdk.project_users.requests.post")
-def test_post_user_preserves_http_409_on_raised_exception(mock_post):
+def test_post_user_preserves_http_409_on_raised_exception():
     api = project_users_api()
     response = MagicMock(status_code=409, text="User already exists")
     error = requests.HTTPError("409 Client Error", response=response)
     response.raise_for_status.side_effect = error
     response.json.return_value = {"detail": "User already exists"}
-    mock_post.return_value = response
+    api.base.transport.post.return_value = response
 
     with pytest.raises(requests.HTTPError) as caught:
         api.post_user(

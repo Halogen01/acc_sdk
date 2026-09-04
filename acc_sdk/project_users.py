@@ -1,5 +1,4 @@
 # accapi/project_users.py
-import requests
 from .base import AccBase
 import time
 
@@ -96,7 +95,7 @@ class AccProjectUsersApi:
         next_url = url
 
         while next_url:
-            response = requests.get(next_url, headers=headers, params=params)
+            response = self.base.transport.get(next_url, headers=headers, params=params)
             self._handle_error_response(response)
 
             data = response.json()
@@ -240,7 +239,7 @@ class AccProjectUsersApi:
         headers = self._get_headers()
         query_params = {"fields": fields}
 
-        response = requests.get(url, headers=headers, params=query_params)
+        response = self.base.transport.get(url, headers=headers, params=query_params)
         self._handle_error_response(response)
 
         user = response.json()
@@ -322,7 +321,9 @@ class AccProjectUsersApi:
         if user.get("suppressAdministrativeEmails") is not None:
             modified_user["suppressAdministrativeEmails"] = user.get("suppressAdministrativeEmails")
 
-        response = requests.post(url, headers=headers, json=modified_user, timeout=100)
+        response = self.base.transport.post(
+            url, headers=headers, json=modified_user, timeout=100
+        )
         self._handle_error_response(response)
 
         return response.json()
@@ -381,7 +382,7 @@ class AccProjectUsersApi:
             chunk = modified_users[i : i + 200]
             data = {"users": chunk}
 
-            response = requests.post(url, headers=headers, json=data)
+            response = self.base.transport.post(url, headers=headers, json=data)
             if response.status_code == 202:
                 print(f"Chunk {i//200 + 1} imported successfully")
             else:
@@ -420,7 +421,7 @@ class AccProjectUsersApi:
         url = f"{self.base_url}/v1/projects/{project_id}/users/{target_user_id}"
         headers = self._get_headers(include_content_type=True)
 
-        response = requests.patch(url, headers=headers, json=data)
+        response = self.base.transport.patch(url, headers=headers, json=data)
         self._handle_error_response(response)
 
         return response.json()
@@ -536,7 +537,7 @@ class AccProjectUsersApi:
         url = f"{self.base_url}/v1/projects/{project_id}/users/{target_user_id}"
         headers = self._get_headers()
 
-        response = requests.delete(url, headers=headers)
+        response = self.base.transport.delete(url, headers=headers)
         self._handle_error_response(response)
 
         return True

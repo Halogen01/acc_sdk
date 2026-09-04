@@ -11,6 +11,7 @@ class TestAccProjectUsersApi(unittest.TestCase):
         self.mock_base = MagicMock(spec=AccBase)
         self.mock_base.get_private_token.return_value = "mock_token"
         self.mock_base.user_info = {"uid": "mock_user_id"}
+        self.mock_base.transport = requests
         self.api = AccProjectUsersApi(base=self.mock_base)
 
     def test_get_headers(self):
@@ -26,7 +27,7 @@ class TestAccProjectUsersApi(unittest.TestCase):
         self.assertEqual(headers["User-Id"], "mock_user_id")
         self.assertEqual(headers["Content-Type"], "application/json")
 
-    @patch("acc_sdk.project_users.requests.get")
+    @patch("requests.get")
     def test_handle_pagination(self, mock_get):
         # Setup mock response
         mock_response = MagicMock()
@@ -69,7 +70,7 @@ class TestAccProjectUsersApi(unittest.TestCase):
         with self.assertRaises(requests.HTTPError):
             self.api._handle_error_response(mock_error_response)
 
-    @patch("acc_sdk.project_users.requests.get")
+    @patch("requests.get")
     def test_get_users(self, mock_get):
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -90,7 +91,7 @@ class TestAccProjectUsersApi(unittest.TestCase):
         self.assertEqual(called_headers["Authorization"], "Bearer mock_token")
         self.assertEqual(called_headers["User-Id"], "mock_user_id")
 
-    @patch("acc_sdk.project_users.requests.post")
+    @patch("requests.post")
     def test_post_user(self, mock_post):
         mock_response = MagicMock()
         mock_response.status_code = 201
@@ -112,7 +113,7 @@ class TestAccProjectUsersApi(unittest.TestCase):
         self.assertEqual(called_headers["User-Id"], "mock_user_id")
         self.assertEqual(called_headers["Content-Type"], "application/json")
 
-    @patch("acc_sdk.project_users.requests.delete")
+    @patch("requests.delete")
     def test_delete_user(self, mock_delete):
         mock_response = MagicMock()
         mock_response.status_code = 204
