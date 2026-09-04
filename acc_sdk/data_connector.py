@@ -494,7 +494,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
             return response.json()
@@ -539,7 +539,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json()
@@ -583,7 +583,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.delete(url, headers=headers)
+        response = self.base.transport.delete(url, headers=headers)
 
         if response.status_code == 204:
             return True
@@ -653,7 +653,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
             return response.json()
