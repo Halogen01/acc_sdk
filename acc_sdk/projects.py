@@ -1,4 +1,3 @@
-import requests
 from .base import AccBase
 
 
@@ -60,7 +59,7 @@ class AccProjectsApi:
         """
         results = []
         while url:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code != 200:
                 errors = response.json().get("errors") or response.json().get("detail")
                 if errors:
@@ -100,7 +99,7 @@ class AccProjectsApi:
         headers = self._get_headers()
         url = f"{self.base_url}/projects/{project_id}"
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             return response.json()
         else:
@@ -152,7 +151,7 @@ class AccProjectsApi:
         if follow_pagination:
             return self._handle_pagination(url, headers, filter_params)
 
-        response = requests.get(url, headers=headers, params=filter_params)
+        response = self.base.transport.get(url, headers=headers, params=filter_params)
         if response.status_code == 200:
             return response.json().get("results", [])
         else:
@@ -281,7 +280,7 @@ class AccProjectsApi:
             "Authorization": headers["Authorization"],
             "User-Id": self.user_id,
         }
-        response = requests.post(
+        response = self.base.transport.post(
             f"{self.base_url}/accounts/{self.base.account_id}/projects",
             headers=headers,
             json=project,

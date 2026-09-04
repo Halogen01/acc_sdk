@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 import os
 import sys
 
@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from acc_sdk.projects import AccProjectsApi
 from acc_sdk.base import AccBase
+from acc_sdk.transport import HttpTransport
 
 
 class TestAccProjectsApi(unittest.TestCase):
@@ -17,6 +18,8 @@ class TestAccProjectsApi(unittest.TestCase):
         self.mock_base.account_id = "test_account_id"
         self.mock_base.get_private_token.return_value = "mock_token"
         self.mock_base.user_info = {"uid": "mock_user_id"}
+        self.mock_transport = MagicMock(spec=HttpTransport)
+        self.mock_base.transport = self.mock_transport
 
         # Create an instance of AccProjectsApi with the mock base
         self.api = AccProjectsApi(base=self.mock_base)
@@ -24,8 +27,7 @@ class TestAccProjectsApi(unittest.TestCase):
         # Set the user_id attribute
         self.api.user_id = "mock_user_id"
 
-    @patch("acc_sdk.projects.requests.get")
-    def test_get_project(self, mock_get):
+    def test_get_project(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -36,7 +38,7 @@ class TestAccProjectsApi(unittest.TestCase):
             "jobNumber": "12345",
             "status": "active",
         }
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method
         result = self.api.get_project(project_id="test_project_id")
@@ -48,13 +50,12 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result["status"], "active")
 
         # Verify the request was made correctly
-        mock_get.assert_called_once_with(
+        self.mock_transport.get.assert_called_once_with(
             f"{self.api.base_url}/projects/test_project_id",
             headers=self.api._get_headers(),
         )
 
-    @patch("acc_sdk.projects.requests.get")
-    def test_get_projects(self, mock_get):
+    def test_get_projects(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -75,7 +76,7 @@ class TestAccProjectsApi(unittest.TestCase):
             ],
             "pagination": {"nextUrl": None},
         }
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method
         result = self.api.get_projects()
@@ -86,14 +87,13 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result[1]["id"], "project2")
 
         # Verify the request was made correctly
-        mock_get.assert_called_once_with(
+        self.mock_transport.get.assert_called_once_with(
             f"{self.api.base_url}/accounts/test_account_id/projects",
             headers=self.api._get_headers(),
             params=None,
         )
 
-    @patch("acc_sdk.projects.requests.get")
-    def test_get_projects_with_pagination(self, mock_get):
+    def test_get_projects_with_pagination(self):
         # Set up the mock responses for pagination
         first_response = MagicMock()
         first_response.status_code = 200
@@ -110,7 +110,7 @@ class TestAccProjectsApi(unittest.TestCase):
         }
 
         # Configure the mock to return different responses on consecutive calls
-        mock_get.side_effect = [first_response, second_response]
+        self.mock_transport.get.side_effect = [first_response, second_response]
 
         # Call the method with pagination enabled
         result = self.api.get_projects(follow_pagination=True)
@@ -121,20 +121,19 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result[1]["id"], "project2")
 
         # Verify the requests were made correctly
-        self.assertEqual(mock_get.call_count, 2)
-        mock_get.assert_any_call(
+        self.assertEqual(self.mock_transport.get.call_count, 2)
+        self.mock_transport.get.assert_any_call(
             f"{self.api.base_url}/accounts/test_account_id/projects",
             headers=self.api._get_headers(),
             params=None,
         )
-        mock_get.assert_any_call(
+        self.mock_transport.get.assert_any_call(
             "https://example.com/next-page",
             headers=self.api._get_headers(),
             params=None,
         )
 
-    @patch("acc_sdk.projects.requests.get")
-    def test_get_active_projects(self, mock_get):
+    def test_get_active_projects(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -142,7 +141,7 @@ class TestAccProjectsApi(unittest.TestCase):
             "results": [{"id": "project1", "name": "Project 1", "status": "active"}],
             "pagination": {"nextUrl": None},
         }
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method
         result = self.api.get_active_projects()
@@ -153,14 +152,13 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result[0]["status"], "active")
 
         # Verify the request was made correctly with the active status filter
-        mock_get.assert_called_once_with(
+        self.mock_transport.get.assert_called_once_with(
             f"{self.api.base_url}/accounts/test_account_id/projects",
             headers=self.api._get_headers(),
             params={"filter[status]": "active"},
         )
 
-    @patch("acc_sdk.projects.requests.get")
-    def test_get_all_active_projects(self, mock_get):
+    def test_get_all_active_projects(self):
         # Set up the mock responses for pagination
         first_response = MagicMock()
         first_response.status_code = 200
@@ -177,7 +175,7 @@ class TestAccProjectsApi(unittest.TestCase):
         }
 
         # Configure the mock to return different responses on consecutive calls
-        mock_get.side_effect = [first_response, second_response]
+        self.mock_transport.get.side_effect = [first_response, second_response]
 
         # Call the method
         result = self.api.get_all_active_projects()
@@ -190,20 +188,19 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result[1]["status"], "active")
 
         # Verify the requests were made correctly
-        self.assertEqual(mock_get.call_count, 2)
-        mock_get.assert_any_call(
+        self.assertEqual(self.mock_transport.get.call_count, 2)
+        self.mock_transport.get.assert_any_call(
             f"{self.api.base_url}/accounts/test_account_id/projects",
             headers=self.api._get_headers(),
             params={"filter[status]": "active"},
         )
-        mock_get.assert_any_call(
+        self.mock_transport.get.assert_any_call(
             "https://example.com/next-page",
             headers=self.api._get_headers(),
             params=None,
         )
 
-    @patch("acc_sdk.projects.requests.post")
-    def test_post_project(self, mock_post):
+    def test_post_project(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 202  # Note: API returns 202 for successful creation
@@ -214,7 +211,7 @@ class TestAccProjectsApi(unittest.TestCase):
             "jobNumber": "12345",
             "status": "active",
         }
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Define a new project
         new_project = {
@@ -233,7 +230,7 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertEqual(result["jobNumber"], "12345")
 
         # Verify the request was made correctly
-        mock_post.assert_called_once_with(
+        self.mock_transport.post.assert_called_once_with(
             f"{self.api.base_url}/accounts/test_account_id/projects",
             headers={
                 "Content-Type": "application/json",
@@ -243,8 +240,7 @@ class TestAccProjectsApi(unittest.TestCase):
             json=new_project,
         )
 
-    @patch("acc_sdk.projects.requests.post")
-    def test_post_project_missing_required_fields(self, mock_post):
+    def test_post_project_missing_required_fields(self):
         # Define an incomplete project
         incomplete_project = {"jobNumber": "12345"}
 
@@ -262,7 +258,7 @@ class TestAccProjectsApi(unittest.TestCase):
         self.assertIn("Missing required parameter 'type'", str(context.exception))
 
         # Verify that no API call was made
-        mock_post.assert_not_called()
+        self.mock_transport.post.assert_not_called()
 
 
 if __name__ == "__main__":
