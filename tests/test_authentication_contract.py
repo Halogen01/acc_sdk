@@ -65,7 +65,7 @@ def test_constructor_preserves_consumer_configuration_and_session():
     assert auth.token_url == OIDC_SPEC["token_endpoint"]
 
 
-@patch("acc_sdk.authentication.requests.post")
+@patch("acc_sdk.authentication.HttpTransport.post")
 def test_two_legged_token_acquisition_preserves_session_contract(mock_post):
     auth, session = make_auth()
     mock_post.return_value = token_response("first-access-token")
@@ -82,7 +82,7 @@ def test_two_legged_token_acquisition_preserves_session_contract(mock_post):
     assert auth.get_token_names() == ["accapi_2legged"]
 
 
-@patch("acc_sdk.authentication.requests.post")
+@patch("acc_sdk.authentication.HttpTransport.post")
 def test_explicit_two_legged_renewal_replaces_token_without_duplicate_name(mock_post):
     auth, session = make_auth()
     mock_post.side_effect = [
@@ -99,7 +99,7 @@ def test_explicit_two_legged_renewal_replaces_token_without_duplicate_name(mock_
     assert auth.get_token_names() == ["accapi_2legged"]
 
 
-@patch("acc_sdk.authentication.requests.post")
+@patch("acc_sdk.authentication.HttpTransport.post")
 def test_expired_two_legged_token_renews_automatically(mock_post):
     session = {
         "accapi_2legged": {

@@ -5,6 +5,8 @@ from urllib.parse import urlencode, quote
 from datetime import datetime
 from enum import Enum
 
+from .transport import HttpTransport
+
 class GrantType(Enum):
     ClientCreds = "client_credentials"
     AuthCode = "authorization_code"
@@ -111,6 +113,7 @@ class Authentication:
         """
 
         # Session is something like a Flask session or dictionary
+        self._transport = HttpTransport()
         self._session = session
         self.token_names = []
         # Check for valid tokens in session starting with 'accapi_' and remove if not authorized
@@ -293,7 +296,7 @@ class Authentication:
             "Accept":        "application/json"
         }
         
-        resp = requests.get(self.user_profile_url, headers=headers)
+        resp = self._transport.get(self.user_profile_url, headers=headers)
         if resp.status_code == 200:
             user_info = resp.json()
             user_info["autodeskId"] = user_info['uid'] = user_info['sub']
@@ -535,7 +538,7 @@ class Authentication:
             "client_secret": self.client_secret            
         }                    
 
-        response = requests.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(self.token_url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json()            
             now = datetime.now().timestamp()
@@ -613,7 +616,7 @@ class Authentication:
             "code_verifier": code_verifier
         }                    
 
-        response = requests.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(self.token_url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json()            
             now = datetime.now().timestamp()
@@ -690,7 +693,7 @@ class Authentication:
             "code_verifier": code_verifier
         }                    
 
-        response = requests.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(self.token_url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json()            
             now = datetime.now().timestamp()
@@ -763,7 +766,7 @@ class Authentication:
         if scopes:
             data["scope"] = " ".join(scopes)
         
-        response = requests.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(self.token_url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json()
             now = datetime.now().timestamp()
@@ -829,7 +832,7 @@ class Authentication:
         if scopes:
             data["scope"] = " ".join(scopes)
 
-        response = requests.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(self.token_url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json()
             now = datetime.now().timestamp()
@@ -893,7 +896,7 @@ class Authentication:
             raise Exception("A list of at least one scope is required.")
 
         scopes_str = " ".join(scopes)        
-        response = requests.post(
+        response = self._transport.post(
             self.token_url,
             headers={
                 "Accept": "application/json",
@@ -1042,7 +1045,7 @@ class Authentication:
             "client_id": self.client_id,            
         }
 
-        response = requests.post(self.revoke_url, headers=headers, data=data)
+        response = self._transport.post(self.revoke_url, headers=headers, data=data)
         if response.status_code == 200:
             if token_name in self._session:
                 del self._session[token_name]
@@ -1097,7 +1100,7 @@ class Authentication:
             "token_type_hint": token_type,            
         }
 
-        response = requests.post(self.revoke_url, headers=headers, data=data)
+        response = self._transport.post(self.revoke_url, headers=headers, data=data)
         if response.status_code == 200:
             if token_name in self._session:
                 del self._session[token_name]
@@ -1145,7 +1148,7 @@ class Authentication:
             "client_secret": self.client_secret
         }
 
-        response = requests.post(self.introspect_url, headers=headers, data=data)
+        response = self._transport.post(self.introspect_url, headers=headers, data=data)
         if response.status_code == 200:      
             return response.json()
         else:
@@ -1190,7 +1193,7 @@ class Authentication:
             "token": self._session.get(token_name).get("access_token"),
         }
 
-        response = requests.post(self.introspect_url, headers=headers, data=data)
+        response = self._transport.post(self.introspect_url, headers=headers, data=data)
         if response.status_code == 200:
             return response.json()
         else:
@@ -1213,6 +1216,6 @@ class Authentication:
             print(f"Token endpoint: {spec.get('token_endpoint')}")
             ```
         """
-        response = requests.get(self.oidc_spec_url)
+        response = self._transport.get(self.oidc_spec_url)
         if response.status_code == 200:
             return response.json()        
