@@ -41,6 +41,10 @@ class AccDataManagementApi:
     MAX_UPLOAD_PART_SIZE = 5 * 1024 * 1024 * 1024
     MAX_UPLOAD_PARTS = 10_000
     MAX_SIGNED_UPLOAD_URLS = 25
+    DATA_MANAGEMENT_FILE_NAME_MAX_LENGTH = 255
+    DATA_MANAGEMENT_RESERVED_FILE_NAME_CHARACTERS = frozenset(
+        '<>:"/\\|?*\'\n\r\t\0\f¢™$®'
+    )
 
     def __init__(self, base: AccBase):
         self.base = base
@@ -577,6 +581,95 @@ class AccDataManagementApi:
                 f"OSS did not return the expected {expected_urls} signed upload URLs"
             )
         return upload_key, list(signed_urls)
+
+    ###########################################################################
+    # Data Management write workflow
+    ###########################################################################
+    def create_storage_location(
+        self,
+        project_id: str,
+        target_id: str,
+        file_name: str,
+        target_type: str = "folders",
+        user_id: str = None,
+    ) -> dict:
+        """Create an OSS storage location for a project item or folder.
+
+        This is an additive, transport-backed alternative to the legacy
+        ``create_project_storage_loc`` method. It returns the JSON:API storage
+        resource from the response ``data`` member.
+        """
+        project_id = self._normalize_data_management_project_id(project_id)
+        if not isinstance(target_id, str) or not target_id:
+            raise ValueError("A target folder or item ID is required")
+        if target_type not in {"folders", "items"}:
+            raise ValueError("target_type must be either 'folders' or 'items'")
+        self._validate_data_management_file_name(file_name)
+
+        url = (
+            "https://developer.api.autodesk.com/data/v1/projects/"
+            f"{quote(project_id, safe='')}/storage"
+        )
+        payload = {
+            "jsonapi": {"version": "1.0"},
+            "data": {
+                "type": "objects",
+                "attributes": {"name": file_name},
+                "relationships": {
+                    "target": {
+                        "data": {"type": target_type, "id": target_id}
+                    }
+                },
+            },
+        }
+        response = self.base.transport.post(
+            url,
+            headers=self._data_management_write_headers(user_id),
+            json=payload,
+        )
+        response.raise_for_status()
+        document = response.json()
+        storage = document.get("data") if isinstance(document, dict) else None
+        if not isinstance(storage, dict) or not storage.get("id"):
+            raise RuntimeError(
+                "Data Management did not return a storage resource ID"
+            )
+        return storage
+
+    @staticmethod
+    def _normalize_data_management_project_id(project_id: str) -> str:
+        if not isinstance(project_id, str) or not project_id:
+            raise ValueError("A project ID is required")
+        if project_id.startswith("b."):
+            if len(project_id) == 2:
+                raise ValueError("A project ID is required")
+            return project_id
+        return f"b.{project_id}"
+
+    def _data_management_write_headers(self, user_id: str = None) -> dict:
+        if user_id is not None and (
+            not isinstance(user_id, str) or not user_id
+        ):
+            raise ValueError("user_id must be a non-empty string when provided")
+        headers = {
+            "Authorization": f"Bearer {self.base.get_private_token()}",
+            "Content-Type": "application/vnd.api+json",
+        }
+        if user_id is not None:
+            headers["x-user-id"] = user_id
+        return headers
+
+    @classmethod
+    def _validate_data_management_file_name(cls, file_name: str) -> None:
+        if not isinstance(file_name, str) or not file_name:
+            raise ValueError("A file name is required")
+        if len(file_name) > cls.DATA_MANAGEMENT_FILE_NAME_MAX_LENGTH:
+            raise ValueError("The file name cannot exceed 255 characters")
+        if any(
+            character in cls.DATA_MANAGEMENT_RESERVED_FILE_NAME_CHARACTERS
+            for character in file_name
+        ):
+            raise ValueError("The file name contains a reserved character")
 
     ###########################################################################
     # Hubs
