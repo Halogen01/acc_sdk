@@ -1,4 +1,3 @@
-import requests
 from .base import AccBase
 
 
@@ -73,7 +72,7 @@ class AccPhotosApi:
         if include:
             params["include"] = ",".join(include)
 
-        response = requests.get(url, params=params, headers=headers)
+        response = self.base.transport.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
@@ -157,6 +156,8 @@ class AccPhotosApi:
         if include:
             params["include"] = ",".join(include)
 
-        response = requests.post(url, json=body, params=params, headers=headers)
+        response = self.base.transport.post(
+            url, json=body, params=params, headers=headers
+        )
         response.raise_for_status()
         return response.json()

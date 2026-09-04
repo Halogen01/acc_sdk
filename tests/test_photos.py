@@ -1,13 +1,9 @@
 import unittest
-from unittest.mock import MagicMock, patch
-import os
-import sys
-
-# Add the parent directory to the path so we can import the acc_sdk module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from unittest.mock import MagicMock
 
 from acc_sdk.photos import AccPhotosApi
 from acc_sdk.base import AccBase
+from acc_sdk.transport import HttpTransport
 
 
 class TestAccPhotosApi(unittest.TestCase):
@@ -15,12 +11,13 @@ class TestAccPhotosApi(unittest.TestCase):
         # Create a mock AccBase instance
         self.mock_base = MagicMock(spec=AccBase)
         self.mock_base.get_3leggedToken.return_value = "test_token"
+        self.mock_transport = MagicMock(spec=HttpTransport)
+        self.mock_base.transport = self.mock_transport
 
         # Create an instance of AccPhotosApi with the mock base
         self.api = AccPhotosApi(self.mock_base)
 
-    @patch("requests.get")
-    def test_get_photo_basic(self, mock_get):
+    def test_get_photo_basic(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -45,7 +42,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "full": "https://example.com/full.jpg"
             }
         }
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method
         result = self.api.get_photo(project_id="project123", photo_id="photo123")
@@ -59,14 +56,13 @@ class TestAccPhotosApi(unittest.TestCase):
         self.assertEqual(result["longitude"], -122.4194)
 
         # Verify the request was made correctly
-        mock_get.assert_called_once_with(
+        self.mock_transport.get.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/photo123",
             params={},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.get")
-    def test_get_photo_with_include(self, mock_get):
+    def test_get_photo_with_include(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -83,7 +79,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "full": "https://example.com/signed-full.jpg"
             }
         }
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method with include parameter
         result = self.api.get_photo(
@@ -99,26 +95,24 @@ class TestAccPhotosApi(unittest.TestCase):
         self.assertEqual(result["signedUrls"]["thumbnail"], "https://example.com/signed-thumbnail.jpg")
 
         # Verify the request was made correctly
-        mock_get.assert_called_once_with(
+        self.mock_transport.get.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/photo123",
             params={"include": "signedUrls"},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.get")
-    def test_get_photo_error(self, mock_get):
+    def test_get_photo_error(self):
         # Set up the mock response for an error
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = Exception("Photo not found")
-        mock_get.return_value = mock_response
+        self.mock_transport.get.return_value = mock_response
 
         # Call the method and expect an exception
         with self.assertRaises(Exception):
             self.api.get_photo(project_id="project123", photo_id="nonexistent")
 
-    @patch("requests.post")
-    def test_get_filtered_photos_basic(self, mock_post):
+    def test_get_filtered_photos_basic(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -141,7 +135,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "offset": 0
             }
         }
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Call the method
         result = self.api.get_filtered_photos(project_id="project123")
@@ -153,15 +147,14 @@ class TestAccPhotosApi(unittest.TestCase):
         self.assertEqual(result["meta"]["total"], 2)
 
         # Verify the request was made correctly
-        mock_post.assert_called_once_with(
+        self.mock_transport.post.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/filter",
             json={},
             params={},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.post")
-    def test_get_filtered_photos_with_filters(self, mock_post):
+    def test_get_filtered_photos_with_filters(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -180,7 +173,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "offset": 0
             }
         }
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Define filter parameters
         filter_params = {
@@ -206,15 +199,14 @@ class TestAccPhotosApi(unittest.TestCase):
         self.assertEqual(result["meta"]["limit"], 10)
 
         # Verify the request was made correctly
-        mock_post.assert_called_once_with(
+        self.mock_transport.post.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/filter",
             json=filter_params,
             params={},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.post")
-    def test_get_filtered_photos_with_include(self, mock_post):
+    def test_get_filtered_photos_with_include(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -234,7 +226,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "offset": 0
             }
         }
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Call the method with include parameter
         result = self.api.get_filtered_photos(
@@ -251,15 +243,14 @@ class TestAccPhotosApi(unittest.TestCase):
         )
 
         # Verify the request was made correctly
-        mock_post.assert_called_once_with(
+        self.mock_transport.post.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/filter",
             json={},
             params={"include": "signedUrls"},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.post")
-    def test_get_filtered_photos_with_date_filters(self, mock_post):
+    def test_get_filtered_photos_with_date_filters(self):
         # Set up the mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -277,7 +268,7 @@ class TestAccPhotosApi(unittest.TestCase):
                 "offset": 0
             }
         }
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Define filter parameters with date range
         filter_params = {
@@ -299,20 +290,19 @@ class TestAccPhotosApi(unittest.TestCase):
         self.assertEqual(result["data"][0]["takenAt"], "2024-01-15T12:00:00Z")
 
         # Verify the request was made correctly
-        mock_post.assert_called_once_with(
+        self.mock_transport.post.assert_called_once_with(
             f"{self.api.base_url}/projects/project123/photos/filter",
             json=filter_params,
             params={},
             headers={"Authorization": "Bearer test_token"}
         )
 
-    @patch("requests.post")
-    def test_get_filtered_photos_error(self, mock_post):
+    def test_get_filtered_photos_error(self):
         # Set up the mock response for an error
         mock_response = MagicMock()
         mock_response.status_code = 400
         mock_response.raise_for_status.side_effect = Exception("Bad request")
-        mock_post.return_value = mock_response
+        self.mock_transport.post.return_value = mock_response
 
         # Call the method and expect an exception
         with self.assertRaises(Exception):
