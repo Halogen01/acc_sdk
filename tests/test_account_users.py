@@ -457,7 +457,7 @@ class TestAccAccountUsersApi(unittest.TestCase):
             f"{self.api.base_url}/accounts/test_account_id/users/import",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "test_token",
+                "Authorization": "Bearer test_token",
                 "User-Id": "test_user_id",
             },
             json=expected_data,
@@ -531,7 +531,7 @@ class TestAccAccountUsersApi(unittest.TestCase):
             f"{self.api.base_url}/accounts/test_account_id/users/import",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "test_token",
+                "Authorization": "Bearer test_token",
                 "User-Id": "test_user_id",
             },
             json=users_data,
