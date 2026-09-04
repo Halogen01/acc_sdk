@@ -1,6 +1,5 @@
-import base64
 from flask import session
-import requests
+from requests.auth import HTTPBasicAuth
 from urllib.parse import urlencode, quote
 from datetime import datetime
 from enum import Enum
@@ -171,6 +170,10 @@ class Authentication:
     ###########################################################################
     # Token Helpers
     ###########################################################################
+
+    def _get_client_auth(self):
+        """Build confidential-client authentication without exposing credentials."""
+        return HTTPBasicAuth(self.client_id, self.client_secret)
     
     def is_authorized(self, token_name)->bool:
         """
@@ -534,11 +537,14 @@ class Authentication:
             "grant_type":    GrantType.AuthCode.value,
             "code":          code,            
             "redirect_uri":  self.callback_url,
-            "client_id":     self.client_id,
-            "client_secret": self.client_secret            
         }                    
 
-        response = self._transport.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(
+            self.token_url,
+            headers=headers,
+            data=data,
+            auth=self._get_client_auth(),
+        )
         if response.status_code == 200:
             token = response.json()            
             now = datetime.now().timestamp()
@@ -685,15 +691,18 @@ class Authentication:
         }
         
         data = {
-            "client_id":     self.client_id,
-            "client_secret": self.client_secret,
             "grant_type":    GrantType.AuthCode.value,
             "code":          code,            
             "redirect_uri":  self.callback_url,
             "code_verifier": code_verifier
         }                    
 
-        response = self._transport.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(
+            self.token_url,
+            headers=headers,
+            data=data,
+            auth=self._get_client_auth(),
+        )
         if response.status_code == 200:
             token = response.json()            
             now = datetime.now().timestamp()
@@ -759,14 +768,17 @@ class Authentication:
         data = {
             "grant_type": GrantType.Refresh.value,
             "refresh_token": self._session.get(token_name, {}).get("refresh_token"),
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
         }
 
         if scopes:
             data["scope"] = " ".join(scopes)
         
-        response = self._transport.post(self.token_url, headers=headers, data=data)
+        response = self._transport.post(
+            self.token_url,
+            headers=headers,
+            data=data,
+            auth=self._get_client_auth(),
+        )
         if response.status_code == 200:
             token = response.json()
             now = datetime.now().timestamp()
@@ -906,9 +918,8 @@ class Authentication:
             data={
                 "grant_type": GrantType.ClientCreds.value,
                 "scope": scopes_str,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret
-            }
+            },
+            auth=self._get_client_auth(),
         )
 
         if response.status_code == 200:
@@ -1087,10 +1098,7 @@ class Authentication:
         if not token_name.startswith("accapi_"):
             token_name = f"accapi_{token_name}"
 
-        auth = f"{self.client_id}:{self.client_secret}"
-        auth = base64.b64encode(auth.encode()).decode("utf-8")
         headers = {
-            "Authorization": f"Basic {auth}",
             "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": "Accapi/1.0"
         }
@@ -1100,7 +1108,12 @@ class Authentication:
             "token_type_hint": token_type,            
         }
 
-        response = self._transport.post(self.revoke_url, headers=headers, data=data)
+        response = self._transport.post(
+            self.revoke_url,
+            headers=headers,
+            data=data,
+            auth=self._get_client_auth(),
+        )
         if response.status_code == 200:
             if token_name in self._session:
                 del self._session[token_name]
@@ -1145,7 +1158,7 @@ class Authentication:
         
         data = {
             "token": self._session.get(token_name).get("access_token"),
-            "client_secret": self.client_secret
+            "client_id": self.client_id,
         }
 
         response = self._transport.post(self.introspect_url, headers=headers, data=data)
@@ -1181,10 +1194,7 @@ class Authentication:
         if not token_name.startswith("accapi_"):
             token_name = f"accapi_{token_name}"
 
-        auth = f"{self.client_id}:{self.client_secret}"
-        auth = base64.b64encode(auth.encode()).decode("utf-8")
         headers = {
-            "Authorization": f"Basic {auth}",
             "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": "Accapi/1.0"
         }
@@ -1193,7 +1203,12 @@ class Authentication:
             "token": self._session.get(token_name).get("access_token"),
         }
 
-        response = self._transport.post(self.introspect_url, headers=headers, data=data)
+        response = self._transport.post(
+            self.introspect_url,
+            headers=headers,
+            data=data,
+            auth=self._get_client_auth(),
+        )
         if response.status_code == 200:
             return response.json()
         else:
