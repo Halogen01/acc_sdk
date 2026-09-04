@@ -1,5 +1,6 @@
 import requests
 import json
+from urllib.parse import quote, urljoin
 from .base import AccBase
 
 
@@ -26,7 +27,7 @@ class AccDataManagementApi:
             the user_id.
         """
         url = "https://developer.api.autodesk.com/project/v1/hubs"
-        headers = {"Authorization:": f"Bearer {self.base.get_private_token()}"}
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
@@ -38,7 +39,7 @@ class AccDataManagementApi:
         if filter_extension_type:
             params["filter[extension.type]"] = filter_extension_type
             
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         if response.status_code == 200:
             hubs_data = response.json().get("data", [])
             return hubs_data
@@ -57,16 +58,16 @@ class AccDataManagementApi:
             dict: The details of the hub.
         """ 
         
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}"
-        headers = {"Authorization:": f"Bearer {self.base.get_private_token()}"}
+        if not hub_id.startswith("b."):
+            hub_id = "b." + hub_id
+
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}"
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
 
         if user_id:
             headers["x-user-id"] = user_id
 
-        if not hub_id.startswith("b."):
-            hub_id = "b." + hub_id
-
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             hub_data = response.json().get("data", {})
             return hub_data            
@@ -91,7 +92,7 @@ class AccDataManagementApi:
         if not hub_id.startswith("b."):
             hub_id = "b." + hub_id
             
-        base_url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects"
+        base_url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects"
                 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
@@ -102,7 +103,9 @@ class AccDataManagementApi:
 
         all_results = []
         while base_url:
-            response = requests.get(base_url, headers=headers, params=query_params)
+            response = self.base.transport.get(
+                base_url, headers=headers, params=query_params
+            )
             response.raise_for_status()  # Raise an exception for HTTP errors
             data = response.json()
             if response.status_code != 200:
@@ -113,8 +116,9 @@ class AccDataManagementApi:
             # Check for the next link in the pagination
             base_url = None
             if "links" in data and "next" in data["links"] and follow_pagination:
-                base_url = (
-                    "https://developer.api.autodesk.com" + data["links"]["next"]["href"]
+                base_url = urljoin(
+                    "https://developer.api.autodesk.com",
+                    data["links"]["next"]["href"],
                 )
                 # Clear query params after the first request to follow the next link properly
                 query_params = {}
@@ -141,13 +145,13 @@ class AccDataManagementApi:
             hub_id = "b." + hub_id
         if not project_id.startswith("b."):
             project_id = "b." + project_id
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}"
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             project_data = response.json()['data']
             return project_data
@@ -172,12 +176,12 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}/hub"        
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}/hub"
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             hub_data = response.json().get("data", {})
             return hub_data
@@ -206,7 +210,7 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/project/v1/hubs/:{hub_id}/projects/:{project_id}/topFolders"
+        url = f"https://developer.api.autodesk.com/project/v1/hubs/{hub_id}/projects/{project_id}/topFolders"
 
         params = {}
         if excludeDeleted:
@@ -218,7 +222,7 @@ class AccDataManagementApi:
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers, params=params)
         if response.status_code == 200:
             folder_data = response.json().get("data", [])
             return folder_data
@@ -385,6 +389,9 @@ class AccDataManagementApi:
         Returns:
             dict: A dictionary containing the folder details.
         """
+        if not project_id.startswith("b."):
+            project_id = "b." + project_id
+
         url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/folders/{folder_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
@@ -393,7 +400,7 @@ class AccDataManagementApi:
         if if_modified_since:
             headers["If-Modified-Since"] = if_modified_since
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json().get("data", {})
@@ -440,7 +447,7 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/:{project_id}/folders/:{folder_id}/contents"
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/folders/{folder_id}/contents"
 
         
         headers = {
@@ -468,7 +475,7 @@ class AccDataManagementApi:
         else:
             params["includeHidden"] = "false"
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
             return response.json().get("data", [])
@@ -927,13 +934,14 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}"
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
             
-        response = requests.get(
+        response = self.base.transport.get(
             url,
             headers=headers,
             params={"includePathInProject": include_path_in_project},
@@ -1093,12 +1101,16 @@ class AccDataManagementApi:
         Returns:
             dict: A dictionary containing the tip version details.
         """
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}/tip"
+        if not project_id.startswith("b."):
+            project_id = "b." + project_id
+
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}/tip"
 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json().get("data", {})
@@ -1122,7 +1134,8 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}/versions"
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}/versions"
 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
@@ -1135,14 +1148,19 @@ class AccDataManagementApi:
 
         all_versions = []
         while url:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code != 200:
                 response.raise_for_status()
             data = response.json()
             all_versions.extend(data["data"])
 
             # Check if there is a next page
-            url = data["links"].get("next", {}).get("href")
+            next_href = data.get("links", {}).get("next", {}).get("href")
+            url = (
+                urljoin("https://developer.api.autodesk.com", next_href)
+                if next_href
+                else None
+            )
 
             # Clear params to avoid reapplying filters to subsequent pages
             params = {}
@@ -1344,7 +1362,8 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/versions/{version_id}"
+        encoded_version_id = quote(version_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/versions/{encoded_version_id}"
 
         headers = {
             "Authorization": f"Bearer {self.base.get_private_token()}",
@@ -1352,14 +1371,12 @@ class AccDataManagementApi:
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
-            response_json = response.json().get("data", {})
+            return response.json().get("data", {})
         else:
             response.raise_for_status()
-
-        return response_json.get("data", {})
 
     def get_version_download_formats(self, project_id, version_id, user_id=None)->list[str]:
         """
