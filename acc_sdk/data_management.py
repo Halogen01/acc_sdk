@@ -204,6 +204,115 @@ class AccDataManagementApi:
         )
 
     ###########################################################################
+    # OSS v2 upload workflow
+    ###########################################################################
+    def get_signed_s3_upload(
+        self,
+        bucket_key: str,
+        object_key: str,
+        parts: int = 1,
+        first_part: int = 1,
+        upload_key: str = None,
+        minutes_expiration: int = None,
+        use_acceleration: bool = None,
+    ) -> dict:
+        """Generate OSS v2 signed URLs for one or more upload parts."""
+        if not isinstance(bucket_key, str) or not bucket_key:
+            raise ValueError("bucket_key is required")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("object_key is required")
+        if isinstance(parts, bool) or not isinstance(parts, int) or not 1 <= parts <= 25:
+            raise ValueError("parts must be an integer from 1 to 25")
+        if (
+            isinstance(first_part, bool)
+            or not isinstance(first_part, int)
+            or first_part < 1
+        ):
+            raise ValueError("first_part must be a positive integer")
+        if upload_key is not None and (
+            not isinstance(upload_key, str) or not upload_key
+        ):
+            raise ValueError("upload_key must be a non-empty string")
+        if first_part != 1 and upload_key is None:
+            raise ValueError("upload_key is required when first_part is not 1")
+        if minutes_expiration is not None and (
+            isinstance(minutes_expiration, bool)
+            or not isinstance(minutes_expiration, int)
+            or not 1 <= minutes_expiration <= 60
+        ):
+            raise ValueError("minutes_expiration must be an integer from 1 to 60")
+        if use_acceleration is not None and not isinstance(use_acceleration, bool):
+            raise ValueError("use_acceleration must be a boolean")
+
+        encoded_bucket_key = quote(bucket_key, safe="")
+        encoded_object_key = quote(object_key, safe="")
+        url = (
+            "https://developer.api.autodesk.com/oss/v2/buckets/"
+            f"{encoded_bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        )
+        headers = {
+            "Authorization": f"Bearer {self.base.get_private_token()}",
+            "Content-Type": "application/json",
+        }
+        params = {"parts": parts, "firstPart": first_part}
+        if upload_key is not None:
+            params["uploadKey"] = upload_key
+        if minutes_expiration is not None:
+            params["minutesExpiration"] = minutes_expiration
+        if use_acceleration is not None:
+            params["useAcceleration"] = use_acceleration
+
+        response = self.base.transport.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def complete_signed_s3_upload(
+        self,
+        bucket_key: str,
+        object_key: str,
+        upload_key: str,
+        size: int = None,
+        e_tags: list[str] = None,
+    ) -> dict:
+        """Complete and optionally validate an OSS v2 signed-S3 upload."""
+        if not isinstance(bucket_key, str) or not bucket_key:
+            raise ValueError("bucket_key is required")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("object_key is required")
+        if not isinstance(upload_key, str) or not upload_key:
+            raise ValueError("upload_key is required")
+        if size is not None and (
+            isinstance(size, bool) or not isinstance(size, int) or size < 0
+        ):
+            raise ValueError("size must be a non-negative integer")
+        if e_tags is not None and (
+            not isinstance(e_tags, list)
+            or not e_tags
+            or any(not isinstance(e_tag, str) or not e_tag for e_tag in e_tags)
+        ):
+            raise ValueError("e_tags must be a non-empty list of strings")
+
+        encoded_bucket_key = quote(bucket_key, safe="")
+        encoded_object_key = quote(object_key, safe="")
+        url = (
+            "https://developer.api.autodesk.com/oss/v2/buckets/"
+            f"{encoded_bucket_key}/objects/{encoded_object_key}/signeds3upload"
+        )
+        headers = {
+            "Authorization": f"Bearer {self.base.get_private_token()}",
+            "Content-Type": "application/json",
+        }
+        payload = {"uploadKey": upload_key}
+        if size is not None:
+            payload["size"] = size
+        if e_tags is not None:
+            payload["eTags"] = e_tags
+
+        response = self.base.transport.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    ###########################################################################
     # Hubs
     ###########################################################################
     def get_hubs(self, user_id: str = None, filter_id:list[str]=None,filter_name:list[str] = None, filter_extension_type:list[str] = None)->list[dict]:
