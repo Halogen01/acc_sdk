@@ -1,6 +1,8 @@
 # Authentication API
 
-The `Authentication` class provides comprehensive methods to manage authentication with the Autodesk Construction Cloud (ACC) API. It supports both 2-legged and 3-legged OAuth flows, token management, and various authentication-related operations.
+The `Authentication` class provides methods to manage authentication with the
+Autodesk Construction Cloud (ACC) API. It supports two-legged, interactive
+three-legged, and Secure Service Account (SSA) flows.
 
 ## Initialize Authentication
 
@@ -74,6 +76,54 @@ new_token = auth_client.request_private_refresh_token(
 
 For a complete example of implementing 3-legged authentication in a web application, see the Flask example in the main README.
 
+## Secure Service Account Authentication
+
+Use an SSA for unattended integrations that need a user-context token. The SSA
+must already be linked to the APS server-to-server application, and its email
+must have the required membership and permissions in each target ACC project.
+
+Keep the client secret and RSA private key in a server-side secret store. This
+example uses environment variables and a base64-encoded PEM value so no key is
+committed to source control:
+
+```python
+import base64
+import os
+
+from acc_sdk import Acc, Authentication
+
+auth_client = Authentication.for_service_account(
+    client_id=os.environ["APS_CLIENT_ID"],
+    client_secret=os.environ["APS_CLIENT_SECRET"],
+    service_account_id=os.environ["APS_SSA_ID"],
+    key_id=os.environ["APS_SSA_KEY_ID"],
+    private_key=base64.b64decode(os.environ["APS_SSA_KEY_BASE64"]),
+    scopes=["data:read", "data:write", "data:create"],
+    session={},
+)
+
+acc = Acc(auth_client=auth_client, account_id=os.environ["APS_ACCOUNT_ID"])
+```
+
+Construction is lazy: it does not exchange an assertion immediately. The first
+call that requests a three-legged token creates a five-minute RS256 assertion
+and exchanges it for an SSA user-context token. The token is cached in the
+session and reissued when it has no more than 60 seconds remaining. The client
+secret, private key, and signed assertion are never written to the token session.
+
+The legacy constructor and its token-selection order are unchanged. On an
+object returned by `for_service_account`, `get_3legged_token()` explicitly uses
+the configured SSA provider. `request_service_account_token()` is public for
+callers that need to force an immediate exchange.
+
+SSA does not take an Autodesk data-region parameter. A US hub therefore uses
+the same authentication flow; pass or detect region values in the relevant
+Data Management and OSS operations.
+
+The implementation follows Autodesk's
+[canonical SSA OpenAPI specification](https://github.com/autodesk-platform-services/aps-sdk-openapi/blob/main/secureserviceaccount/secureServiceAccount.yaml)
+and [official Python SSA sample](https://github.com/autodesk-platform-services/aps-mcp-server-python/tree/main/mcp_server_ssa).
+
 ## Token Management
 
 Manage and validate your authentication tokens.
@@ -108,6 +158,7 @@ The Authentication class supports various token types and scopes:
 
 - **2-Legged Tokens**: For server-to-server operations
 - **3-Legged Tokens**: For user-specific operations
+- **Secure Service Account Tokens**: Non-interactive user-context tokens for an SSA identity
 - **Public Tokens**: Without client secret (PKCE flow)
 - **Private Tokens**: With client secret
 

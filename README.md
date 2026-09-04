@@ -128,6 +128,7 @@ manages the tokens and their liftimes. The Authentication module class provides 
 - Authenticate with the ACC API using
   - 2 legged OAuth Client Credential flow
   - 3 legged OAuth Authorization Code flow
+  - Secure Service Account JWT assertion flow for unattended user-context access
 - Maintain the validity of tokens, by refreshing them as they expire
 - Manage both 2-legged and 3-legged tokens concurrently to give you full access to the API services
 - Revoke tokens
@@ -280,7 +281,7 @@ Making API requests is simple. You can access the various services provided by t
 
 For detailed usage instructions and examples, please refer to the following documentation files:
 
-- [Authentication API](docs/authentication.md) - Authentication with OAuth 2.0 flows
+- [Authentication API](docs/authentication.md) - OAuth 2.0 and Secure Service Account flows
 - [Photos API](docs/photos_api.md) - Interact with photos and media
 - [Projects API](docs/projects_api.md) - Manage projects
 - [Account Users API](docs/account_users_api.md) - Manage account users
