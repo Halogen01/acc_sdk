@@ -1,4 +1,3 @@
-import requests
 import os
 import mimetypes
 from .base import AccBase
@@ -113,7 +112,7 @@ class AccCompaniesApi:
         params["limit"] = limit
         params["offset"] = offset
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         if response.status_code == 200:
             content = response.json()
             # Only return the "results" array to the caller.
@@ -153,7 +152,7 @@ class AccCompaniesApi:
         
         url = f"https://developer.api.autodesk.com/hq/v1/accounts/{self.base.account_id}/companies/{company_id}"
         
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             content = response.json()
             return content
@@ -233,7 +232,7 @@ class AccCompaniesApi:
             url = f"https://developer.api.autodesk.com/hq/v1/accounts/{account_id}/companies/{company_id}"
         
         # Send the PATCH request with the JSON data
-        response = requests.patch(url, json=data, headers=headers)
+        response = self.base.transport.patch(url, json=data, headers=headers)
         
         # Raise an exception if the request was unsuccessful
         if response.status_code != 200:
@@ -323,7 +322,7 @@ class AccCompaniesApi:
             files = {
                 "chunk": (file_name, file_obj, mime_type)
             }
-            response = requests.patch(url, headers=headers, files=files)
+            response = self.base.transport.patch(url, headers=headers, files=files)
         
         # Raise an exception for non-successful responses
         if response.status_code != 200:

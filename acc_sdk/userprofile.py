@@ -1,4 +1,3 @@
-import requests
 from .base import AccBase
 
 
@@ -23,11 +22,10 @@ class AccUserProfileApi:
         """
         token = self.base.get_private_token()
         headers = { "Authorization": f"Bearer {token}" }
-        response = requests.get(
+        response = self.base.transport.get(
             f"{self.baseAddress}/userinfo",
             headers=headers
         )
 
         response.raise_for_status()
         return response.json()
-        
