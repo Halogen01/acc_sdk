@@ -174,6 +174,11 @@ class Authentication:
     def _get_client_auth(self):
         """Build confidential-client authentication without exposing credentials."""
         return HTTPBasicAuth(self.client_id, self.client_secret)
+
+    @property
+    def transport(self):
+        """Return the shared HTTP transport used by this authenticated client."""
+        return self._transport
     
     def is_authorized(self, token_name)->bool:
         """
