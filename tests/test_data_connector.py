@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import os
+import requests
 import sys
 
 # Add the parent directory to the path so we can import the acc_sdk module
@@ -17,6 +18,7 @@ class TestAccDataConnectorApi(unittest.TestCase):
         self.mock_base.account_id = "test_account_id"
         self.mock_base.get_private_token.return_value = "test_token"
         self.mock_base.get_3leggedToken.return_value = "test_token"
+        self.mock_base.transport = requests
 
         # Create an instance of AccDataConnectorApi with the mock base
         self.api = AccDataConnectorApi(self.mock_base)
@@ -170,6 +172,31 @@ class TestAccDataConnectorApi(unittest.TestCase):
             self.api.post_request(data=test_data)
         self.assertTrue(
             "effectiveTo is required for recurring schedules" in str(context.exception)
+        )
+
+    @patch("requests.patch")
+    def test_patch_request(self, mock_patch):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "id": "request-id",
+            "description": "Updated Data Extract",
+        }
+        mock_patch.return_value = response
+
+        result = self.api.patch_request(
+            request_id="request-id",
+            data={"description": "Updated Data Extract"},
+        )
+
+        self.assertEqual(result["description"], "Updated Data Extract")
+        mock_patch.assert_called_once_with(
+            f"{self.api.base_address}/accounts/test_account_id/requests/request-id",
+            headers={
+                "Authorization": "Bearer test_token",
+                "Content-Type": "application/json",
+            },
+            json={"description": "Updated Data Extract"},
         )
 
     @patch("requests.get")
