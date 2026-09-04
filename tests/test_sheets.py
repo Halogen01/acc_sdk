@@ -195,5 +195,183 @@ class TestAccSheetsUploads(unittest.TestCase):
         )
 
 
+class TestAccSheetsOperations(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_private_token.return_value = "private-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccSheetsApi(self.base)
+        self.headers = {"Authorization": "Bearer private-token"}
+        self.json_headers = {
+            **self.headers,
+            "Content-Type": "application/json",
+        }
+
+    def response(self, status_code=200, payload=None):
+        response = MagicMock(status_code=status_code)
+        response.json.return_value = payload
+        return response
+
+    def test_get_sheets_preserves_pagination_and_query(self):
+        first = self.response(
+            payload={
+                "results": [{"id": "one"}],
+                "pagination": {"next": "https://example.com/next"},
+            }
+        )
+        second = self.response(
+            payload={"results": [{"id": "two"}], "pagination": {}}
+        )
+        self.base.transport.get.side_effect = [first, second]
+
+        result = self.api.get_sheets(
+            "project-id",
+            user_id="user-id",
+            query_params={"limit": 50},
+            follow_pagination=True,
+        )
+
+        self.assertEqual(result, [{"id": "one"}, {"id": "two"}])
+        headers = {**self.headers, "x-user-id": "user-id"}
+        self.base.transport.get.assert_any_call(
+            f"{self.api.base_url}/projects/project-id/sheets",
+            headers=headers,
+            params={"limit": 50},
+        )
+        self.base.transport.get.assert_any_call(
+            "https://example.com/next", headers=headers, params=None
+        )
+
+    def test_batch_get_sheets(self):
+        self.base.transport.post.return_value = self.response(
+            payload={"results": [{"id": "sheet-id"}]}
+        )
+
+        result = self.api.batch_get_sheets("project-id", ["sheet-id"])
+
+        self.assertEqual(result, [{"id": "sheet-id"}])
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/sheets:batch-get",
+            headers=self.json_headers,
+            json={"ids": ["sheet-id"]},
+        )
+
+    def test_batch_get_sheets_rejects_more_than_200_ids(self):
+        with self.assertRaisesRegex(ValueError, "maximum number.*200"):
+            self.api.batch_get_sheets("project-id", ["sheet-id"] * 201)
+
+        self.base.transport.post.assert_not_called()
+
+    def test_batch_update_sheets(self):
+        self.base.transport.post.return_value = self.response(
+            payload={"results": [{"id": "sheet-id", "title": "Updated"}]}
+        )
+
+        result = self.api.batch_update_sheets(
+            "project-id", ["sheet-id"], {"title": "Updated"}, user_id="user-id"
+        )
+
+        self.assertEqual(result[0]["title"], "Updated")
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/sheets:batch-update",
+            headers={**self.json_headers, "x-user-id": "user-id"},
+            json={"ids": ["sheet-id"], "updates": {"title": "Updated"}},
+        )
+
+    def test_batch_delete_sheets(self):
+        self.base.transport.post.return_value = self.response()
+
+        result = self.api.batch_delete_sheets("project-id", ["sheet-id"])
+
+        self.assertIsNone(result)
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/sheets:batch-delete",
+            headers=self.json_headers,
+            json={"ids": ["sheet-id"]},
+        )
+
+    def test_batch_restore_sheets(self):
+        self.base.transport.post.return_value = self.response()
+
+        result = self.api.batch_restore_sheets("project-id", ["sheet-id"])
+
+        self.assertIsNone(result)
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/sheets:batch-restore",
+            headers=self.json_headers,
+            json={"ids": ["sheet-id"]},
+        )
+
+    def test_export_sheets(self):
+        payload = {"id": "export-id", "status": "pending"}
+        self.base.transport.post.return_value = self.response(202, payload)
+        options = {"outputFileName": "sheets.pdf"}
+
+        result = self.api.export_sheets(
+            "project-id", options, ["sheet-id"], user_id="user-id"
+        )
+
+        self.assertEqual(result, payload)
+        self.base.transport.post.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/exports",
+            json={"options": options, "sheets": ["sheet-id"]},
+            headers={**self.json_headers, "x-user-id": "user-id"},
+        )
+
+    def test_export_sheets_rejects_more_than_1000_sheets(self):
+        with self.assertRaisesRegex(ValueError, "maximum number.*1000"):
+            self.api.export_sheets("project-id", {}, ["sheet-id"] * 1001)
+
+        self.base.transport.post.assert_not_called()
+
+    def test_get_export_status(self):
+        payload = {"id": "export-id", "status": "complete"}
+        self.base.transport.get.return_value = self.response(200, payload)
+
+        result = self.api.get_export_status("project-id", "export-id")
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/exports/export-id",
+            headers=self.json_headers,
+        )
+
+    def test_get_collections_follows_pagination(self):
+        first = self.response(
+            payload={
+                "results": [{"id": "one"}],
+                "pagination": {"nextUrl": "https://example.com/next"},
+            }
+        )
+        second = self.response(
+            payload={"results": [{"id": "two"}], "pagination": {}}
+        )
+        self.base.transport.get.side_effect = [first, second]
+
+        result = self.api.get_collections("project-id", follow_pagination=True)
+
+        self.assertEqual(result, [{"id": "one"}, {"id": "two"}])
+        self.base.transport.get.assert_any_call(
+            f"{self.api.base_url}/projects/project-id/collections",
+            headers=self.headers,
+            params={},
+        )
+        self.base.transport.get.assert_any_call(
+            "https://example.com/next", headers=self.headers
+        )
+
+    def test_get_collection(self):
+        payload = {"id": "collection-id"}
+        self.base.transport.get.return_value = self.response(200, payload)
+
+        result = self.api.get_collection("project-id", "collection-id")
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            f"{self.api.base_url}/projects/project-id/collections/collection-id",
+            headers=self.headers,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
