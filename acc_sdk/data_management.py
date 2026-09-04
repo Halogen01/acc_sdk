@@ -1,11 +1,16 @@
 import requests
 import json
+import os
+import tempfile
+from pathlib import Path
 from urllib.parse import quote, urljoin
 from .base import AccBase
 
 
 class AccDataManagementApi:
     OSS_STORAGE_URN_PREFIX = "urn:adsk.objects:os.object:"
+    DEFAULT_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+    MAX_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 
     def __init__(self, base: AccBase):
         self.base = base
@@ -73,6 +78,77 @@ class AccDataManagementApi:
         response = self.base.transport.get(url, headers=headers, params=params)
         response.raise_for_status()
         return response.json()
+
+    def download_from_signed_url(
+        self,
+        signed_url: str,
+        destination_path,
+        chunk_size: int = DEFAULT_DOWNLOAD_CHUNK_SIZE,
+        max_bytes: int = None,
+    ) -> str:
+        """Stream a signed download to disk and atomically replace the destination."""
+        if not isinstance(signed_url, str) or not signed_url:
+            raise ValueError("signed_url is required")
+        if not isinstance(destination_path, (str, os.PathLike)) or not os.fspath(
+            destination_path
+        ):
+            raise ValueError("destination_path is required")
+        if (
+            isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, int)
+            or not 1 <= chunk_size <= self.MAX_DOWNLOAD_CHUNK_SIZE
+        ):
+            raise ValueError(
+                "chunk_size must be an integer from 1 to "
+                f"{self.MAX_DOWNLOAD_CHUNK_SIZE} bytes"
+            )
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 1
+        ):
+            raise ValueError("max_bytes must be a positive integer")
+
+        destination = Path(destination_path)
+        if destination.is_dir():
+            raise ValueError("destination_path must identify a file")
+
+        response = self.base.transport.get(signed_url, stream=True)
+        temporary_path = None
+        try:
+            response.raise_for_status()
+            content_length = response.headers.get("Content-Length")
+            if (
+                max_bytes is not None
+                and content_length is not None
+                and int(content_length) > max_bytes
+            ):
+                raise ValueError("Download exceeds max_bytes")
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".part",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                bytes_written = 0
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if not chunk:
+                        continue
+                    bytes_written += len(chunk)
+                    if max_bytes is not None and bytes_written > max_bytes:
+                        raise ValueError("Download exceeds max_bytes")
+                    temporary_file.write(chunk)
+
+            os.replace(temporary_path, destination)
+            temporary_path = None
+            return str(destination)
+        finally:
+            response.close()
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     ###########################################################################
     # Hubs

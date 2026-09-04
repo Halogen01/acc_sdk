@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
 
 from acc_sdk.base import AccBase
@@ -85,6 +87,105 @@ class TestOssSignedDownload(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.api.get_signed_s3_download(
                     "wip.dm.prod", "model.rvt", minutes_expiration=value
+                )
+
+        self.base.transport.get.assert_not_called()
+
+
+class TestSignedUrlStreaming(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccDataManagementApi(self.base)
+
+    def response(self, chunks, content_length=None):
+        response = MagicMock()
+        response.headers = {}
+        if content_length is not None:
+            response.headers["Content-Length"] = str(content_length)
+        response.iter_content.return_value = chunks
+        return response
+
+    def test_streams_to_file_with_bounded_chunks_and_skips_empty_chunks(self):
+        response = self.response([b"first", b"", b"second"], content_length=11)
+        self.base.transport.get.return_value = response
+
+        with TemporaryDirectory() as directory:
+            destination = Path(directory) / "model.rvt"
+
+            result = self.api.download_from_signed_url(
+                "https://example.s3.amazonaws.com/signed-object",
+                destination,
+                chunk_size=4096,
+                max_bytes=20,
+            )
+
+            self.assertEqual(result, str(destination))
+            self.assertEqual(destination.read_bytes(), b"firstsecond")
+            self.assertEqual(list(destination.parent.glob("*.part")), [])
+
+        self.base.transport.get.assert_called_once_with(
+            "https://example.s3.amazonaws.com/signed-object", stream=True
+        )
+        response.raise_for_status.assert_called_once_with()
+        response.iter_content.assert_called_once_with(chunk_size=4096)
+        response.close.assert_called_once_with()
+
+    def test_stream_failure_keeps_existing_destination_and_removes_partial_file(self):
+        response = self.response([b"1234", b"5678"])
+        self.base.transport.get.return_value = response
+
+        with TemporaryDirectory() as directory:
+            destination = Path(directory) / "model.rvt"
+            destination.write_bytes(b"existing")
+
+            with self.assertRaisesRegex(ValueError, "exceeds max_bytes"):
+                self.api.download_from_signed_url(
+                    "https://example.s3.amazonaws.com/signed-object",
+                    destination,
+                    max_bytes=6,
+                )
+
+            self.assertEqual(destination.read_bytes(), b"existing")
+            self.assertEqual(list(destination.parent.glob("*.part")), [])
+
+        response.close.assert_called_once_with()
+
+    def test_content_length_over_limit_fails_before_creating_a_file(self):
+        response = self.response([], content_length=100)
+        self.base.transport.get.return_value = response
+
+        with TemporaryDirectory() as directory:
+            destination = Path(directory) / "model.rvt"
+
+            with self.assertRaisesRegex(ValueError, "exceeds max_bytes"):
+                self.api.download_from_signed_url(
+                    "https://example.s3.amazonaws.com/signed-object",
+                    destination,
+                    max_bytes=99,
+                )
+
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(destination.parent.glob("*.part")), [])
+
+        response.iter_content.assert_not_called()
+        response.close.assert_called_once_with()
+
+    def test_rejects_invalid_limits_before_request(self):
+        invalid_arguments = [
+            {"chunk_size": True},
+            {"chunk_size": 0},
+            {"chunk_size": self.api.MAX_DOWNLOAD_CHUNK_SIZE + 1},
+            {"max_bytes": True},
+            {"max_bytes": 0},
+        ]
+
+        for arguments in invalid_arguments:
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                self.api.download_from_signed_url(
+                    "https://example.s3.amazonaws.com/signed-object",
+                    "model.rvt",
+                    **arguments,
                 )
 
         self.base.transport.get.assert_not_called()
