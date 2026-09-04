@@ -1,5 +1,4 @@
 # accapi/forms.py
-import requests
 from datetime import date, timedelta
 from .base import AccBase
 
@@ -57,7 +56,7 @@ class AccFormsApi:
         """
         results = []
         while url:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
 
@@ -177,7 +176,7 @@ class AccFormsApi:
         if follow_pagination:
             return self._handle_pagination(url, headers, params)
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         response.raise_for_status()
         return response.json().get("data", [])
 
@@ -248,7 +247,7 @@ class AccFormsApi:
         if follow_pagination:
             return self._handle_pagination(url, headers, params)
 
-        response = requests.get(url, headers=headers, params=params)
+        response = self.base.transport.get(url, headers=headers, params=params)
         response.raise_for_status()
         return response.json().get("data", [])
 
@@ -326,7 +325,7 @@ class AccFormsApi:
         )
 
         headers = self._get_headers()
-        response = requests.post(url, headers=headers, json=data)
+        response = self.base.transport.post(url, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
 
@@ -369,7 +368,7 @@ class AccFormsApi:
         url = f"{self.base_url}/projects/{project_id}/form-templates/{template_id}/forms/{form_id}"
 
         headers = self._get_headers()
-        response = requests.patch(url, headers=headers, json=data)
+        response = self.base.transport.patch(url, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
 
@@ -414,6 +413,6 @@ class AccFormsApi:
         )
 
         headers = self._get_headers()
-        response = requests.put(url, headers=headers, json=data)
+        response = self.base.transport.put(url, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
