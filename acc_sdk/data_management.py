@@ -5,8 +5,74 @@ from .base import AccBase
 
 
 class AccDataManagementApi:
+    OSS_STORAGE_URN_PREFIX = "urn:adsk.objects:os.object:"
+
     def __init__(self, base: AccBase):
         self.base = base
+
+    ###########################################################################
+    # OSS v2 download workflow
+    ###########################################################################
+    @classmethod
+    def parse_oss_storage_urn(cls, storage_urn: str) -> tuple[str, str]:
+        """Return the bucket and object keys from an Autodesk OSS storage URN."""
+        if not isinstance(storage_urn, str) or not storage_urn.startswith(
+            cls.OSS_STORAGE_URN_PREFIX
+        ):
+            raise ValueError("A valid Autodesk OSS storage URN is required")
+
+        bucket_key, separator, object_key = storage_urn[
+            len(cls.OSS_STORAGE_URN_PREFIX) :
+        ].partition("/")
+        if not separator or not bucket_key or not object_key:
+            raise ValueError("The OSS storage URN must contain bucket and object keys")
+
+        return bucket_key, object_key
+
+    def get_signed_s3_download(
+        self,
+        bucket_key: str,
+        object_key: str,
+        minutes_expiration: int = None,
+        use_cdn: bool = None,
+        public_resource_fallback: bool = None,
+    ) -> dict:
+        """Generate an OSS v2 signed URL response for one object download."""
+        if not isinstance(bucket_key, str) or not bucket_key:
+            raise ValueError("bucket_key is required")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("object_key is required")
+        if minutes_expiration is not None and (
+            isinstance(minutes_expiration, bool)
+            or not isinstance(minutes_expiration, int)
+            or not 1 <= minutes_expiration <= 60
+        ):
+            raise ValueError("minutes_expiration must be an integer from 1 to 60")
+        if use_cdn is not None and not isinstance(use_cdn, bool):
+            raise ValueError("use_cdn must be a boolean")
+        if public_resource_fallback is not None and not isinstance(
+            public_resource_fallback, bool
+        ):
+            raise ValueError("public_resource_fallback must be a boolean")
+
+        encoded_bucket_key = quote(bucket_key, safe="")
+        encoded_object_key = quote(object_key, safe="")
+        url = (
+            "https://developer.api.autodesk.com/oss/v2/buckets/"
+            f"{encoded_bucket_key}/objects/{encoded_object_key}/signeds3download"
+        )
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
+        params = {}
+        if minutes_expiration is not None:
+            params["minutesExpiration"] = minutes_expiration
+        if use_cdn is not None:
+            params["useCdn"] = use_cdn
+        if public_resource_fallback is not None:
+            params["public-resource-fallback"] = public_resource_fallback
+
+        response = self.base.transport.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json()
 
     ###########################################################################
     # Hubs
