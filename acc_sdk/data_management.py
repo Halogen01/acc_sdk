@@ -272,14 +272,9 @@ class AccDataManagementApi:
             raise ValueError("upload_key must be a non-empty string")
         if first_part != 1 and upload_key is None:
             raise ValueError("upload_key is required when first_part is not 1")
-        if minutes_expiration is not None and (
-            isinstance(minutes_expiration, bool)
-            or not isinstance(minutes_expiration, int)
-            or not 1 <= minutes_expiration <= 60
-        ):
-            raise ValueError("minutes_expiration must be an integer from 1 to 60")
-        if use_acceleration is not None and not isinstance(use_acceleration, bool):
-            raise ValueError("use_acceleration must be a boolean")
+        self._validate_signed_upload_preferences(
+            minutes_expiration, use_acceleration
+        )
 
         encoded_bucket_key = quote(bucket_key, safe="")
         encoded_object_key = quote(object_key, safe="")
@@ -443,54 +438,13 @@ class AccDataManagementApi:
             raise ValueError("bucket_key is required")
         if not isinstance(object_key, str) or not object_key:
             raise ValueError("object_key is required")
-        if not isinstance(source_path, (str, os.PathLike)) or not os.fspath(
-            source_path
-        ):
-            raise ValueError("source_path is required")
-        if (
-            isinstance(part_size, bool)
-            or not isinstance(part_size, int)
-            or not 1 <= part_size <= self.MAX_UPLOAD_PART_SIZE
-        ):
-            raise ValueError(
-                "part_size must be an integer from 1 to "
-                f"{self.MAX_UPLOAD_PART_SIZE} bytes"
-            )
-        if max_bytes is not None and (
-            isinstance(max_bytes, bool)
-            or not isinstance(max_bytes, int)
-            or max_bytes < 0
-        ):
-            raise ValueError("max_bytes must be a non-negative integer")
-        for value, name in (
-            (max_retries, "max_retries"),
-            (max_url_refreshes, "max_url_refreshes"),
-        ):
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or not 0 <= value <= self.MAX_UPLOAD_RETRIES
-            ):
-                raise ValueError(
-                    f"{name} must be an integer from 0 to {self.MAX_UPLOAD_RETRIES}"
-                )
-
-        source = Path(source_path)
-        if not source.is_file():
-            raise ValueError("source_path must identify an existing file")
-        file_size = source.stat().st_size
-        if max_bytes is not None and file_size > max_bytes:
-            raise ValueError("Upload exceeds max_bytes")
-
-        total_parts = max(1, (file_size + part_size - 1) // part_size)
-        if total_parts > 1 and part_size < self.MIN_MULTIPART_UPLOAD_PART_SIZE:
-            raise ValueError(
-                "part_size must be at least 5 MiB for a multipart upload"
-            )
-        if total_parts > self.MAX_UPLOAD_PARTS:
-            raise ValueError(
-                f"Upload requires more than {self.MAX_UPLOAD_PARTS} parts"
-            )
+        source, file_size, total_parts = self._prepare_oss_upload_file(
+            source_path,
+            part_size,
+            max_bytes,
+            max_retries,
+            max_url_refreshes,
+        )
 
         upload_key = None
         signed_urls = []
@@ -562,6 +516,77 @@ class AccDataManagementApi:
             reason = completed.get("reason", "validation failed")
             raise RuntimeError(f"OSS upload completion failed: {reason}")
         return completed
+
+    def _prepare_oss_upload_file(
+        self,
+        source_path,
+        part_size: int,
+        max_bytes: int,
+        max_retries: int,
+        max_url_refreshes: int,
+    ) -> tuple[Path, int, int]:
+        if not isinstance(source_path, (str, os.PathLike)) or not os.fspath(
+            source_path
+        ):
+            raise ValueError("source_path is required")
+        if (
+            isinstance(part_size, bool)
+            or not isinstance(part_size, int)
+            or not 1 <= part_size <= self.MAX_UPLOAD_PART_SIZE
+        ):
+            raise ValueError(
+                "part_size must be an integer from 1 to "
+                f"{self.MAX_UPLOAD_PART_SIZE} bytes"
+            )
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 0
+        ):
+            raise ValueError("max_bytes must be a non-negative integer")
+        for value, name in (
+            (max_retries, "max_retries"),
+            (max_url_refreshes, "max_url_refreshes"),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= self.MAX_UPLOAD_RETRIES
+            ):
+                raise ValueError(
+                    f"{name} must be an integer from 0 to {self.MAX_UPLOAD_RETRIES}"
+                )
+
+        source = Path(source_path)
+        if not source.is_file():
+            raise ValueError("source_path must identify an existing file")
+        file_size = source.stat().st_size
+        if max_bytes is not None and file_size > max_bytes:
+            raise ValueError("Upload exceeds max_bytes")
+
+        total_parts = max(1, (file_size + part_size - 1) // part_size)
+        if total_parts > 1 and part_size < self.MIN_MULTIPART_UPLOAD_PART_SIZE:
+            raise ValueError(
+                "part_size must be at least 5 MiB for a multipart upload"
+            )
+        if total_parts > self.MAX_UPLOAD_PARTS:
+            raise ValueError(
+                f"Upload requires more than {self.MAX_UPLOAD_PARTS} parts"
+            )
+        return source, file_size, total_parts
+
+    @staticmethod
+    def _validate_signed_upload_preferences(
+        minutes_expiration: int = None, use_acceleration: bool = None
+    ) -> None:
+        if minutes_expiration is not None and (
+            isinstance(minutes_expiration, bool)
+            or not isinstance(minutes_expiration, int)
+            or not 1 <= minutes_expiration <= 60
+        ):
+            raise ValueError("minutes_expiration must be an integer from 1 to 60")
+        if use_acceleration is not None and not isinstance(use_acceleration, bool):
+            raise ValueError("use_acceleration must be a boolean")
 
     @staticmethod
     def _validate_upload_session(
@@ -754,6 +779,200 @@ class AccDataManagementApi:
             project_id, "versions", payload, user_id
         )
 
+    def upload_new_file_item(
+        self,
+        project_id: str,
+        folder_id: str,
+        source_path,
+        file_name: str = None,
+        user_id: str = None,
+        item_extension_type: str = DEFAULT_ITEM_EXTENSION_TYPE,
+        version_extension_type: str = DEFAULT_VERSION_EXTENSION_TYPE,
+        extension_schema_version: str = DEFAULT_EXTENSION_SCHEMA_VERSION,
+        part_size: int = DEFAULT_UPLOAD_PART_SIZE,
+        max_bytes: int = None,
+        minutes_expiration: int = None,
+        use_acceleration: bool = None,
+        max_retries: int = 2,
+        max_url_refreshes: int = 2,
+    ) -> dict:
+        """Create storage, upload a file, then create its item and first version.
+
+        Inputs are fully validated before storage is created. If an Autodesk
+        operation later fails, its completed storage or OSS object may remain;
+        this method does not perform an unsafe automatic delete or retry.
+        """
+        project_id, source, file_name = self._prepare_file_write_workflow(
+            project_id,
+            folder_id,
+            "folder",
+            source_path,
+            file_name,
+            user_id,
+            part_size,
+            max_bytes,
+            minutes_expiration,
+            use_acceleration,
+            max_retries,
+            max_url_refreshes,
+        )
+        self._validate_data_management_extension(
+            item_extension_type, "items", extension_schema_version
+        )
+        self._validate_data_management_extension(
+            version_extension_type, "versions", extension_schema_version
+        )
+
+        storage = self.create_storage_location(
+            project_id, folder_id, file_name, user_id=user_id
+        )
+        upload = self._upload_file_to_storage_resource(
+            storage,
+            source,
+            part_size,
+            max_bytes,
+            minutes_expiration,
+            use_acceleration,
+            max_retries,
+            max_url_refreshes,
+        )
+        item = self.create_file_item(
+            project_id,
+            folder_id,
+            file_name,
+            storage["id"],
+            user_id=user_id,
+            item_extension_type=item_extension_type,
+            version_extension_type=version_extension_type,
+            extension_schema_version=extension_schema_version,
+        )
+        return {"storage": storage, "upload": upload, "item": item}
+
+    def upload_new_file_version(
+        self,
+        project_id: str,
+        item_id: str,
+        source_path,
+        file_name: str = None,
+        user_id: str = None,
+        version_extension_type: str = DEFAULT_VERSION_EXTENSION_TYPE,
+        extension_schema_version: str = DEFAULT_EXTENSION_SCHEMA_VERSION,
+        part_size: int = DEFAULT_UPLOAD_PART_SIZE,
+        max_bytes: int = None,
+        minutes_expiration: int = None,
+        use_acceleration: bool = None,
+        max_retries: int = 2,
+        max_url_refreshes: int = 2,
+    ) -> dict:
+        """Create storage, upload a file, then create its next item version.
+
+        Inputs are fully validated before storage is created. If an Autodesk
+        operation later fails, its completed storage or OSS object may remain;
+        this method does not perform an unsafe automatic delete or retry.
+        """
+        project_id, source, file_name = self._prepare_file_write_workflow(
+            project_id,
+            item_id,
+            "item",
+            source_path,
+            file_name,
+            user_id,
+            part_size,
+            max_bytes,
+            minutes_expiration,
+            use_acceleration,
+            max_retries,
+            max_url_refreshes,
+        )
+        self._validate_data_management_extension(
+            version_extension_type, "versions", extension_schema_version
+        )
+
+        storage = self.create_storage_location(
+            project_id,
+            item_id,
+            file_name,
+            target_type="items",
+            user_id=user_id,
+        )
+        upload = self._upload_file_to_storage_resource(
+            storage,
+            source,
+            part_size,
+            max_bytes,
+            minutes_expiration,
+            use_acceleration,
+            max_retries,
+            max_url_refreshes,
+        )
+        version = self.create_file_version(
+            project_id,
+            item_id,
+            file_name,
+            storage["id"],
+            user_id=user_id,
+            version_extension_type=version_extension_type,
+            extension_schema_version=extension_schema_version,
+        )
+        return {"storage": storage, "upload": upload, "version": version}
+
+    def _prepare_file_write_workflow(
+        self,
+        project_id: str,
+        target_id: str,
+        target_label: str,
+        source_path,
+        file_name: str,
+        user_id: str,
+        part_size: int,
+        max_bytes: int,
+        minutes_expiration: int,
+        use_acceleration: bool,
+        max_retries: int,
+        max_url_refreshes: int,
+    ) -> tuple[str, Path, str]:
+        project_id = self._normalize_data_management_project_id(project_id)
+        self._require_data_management_id(target_id, target_label)
+        source, _, _ = self._prepare_oss_upload_file(
+            source_path,
+            part_size,
+            max_bytes,
+            max_retries,
+            max_url_refreshes,
+        )
+        self._validate_signed_upload_preferences(
+            minutes_expiration, use_acceleration
+        )
+        if file_name is None:
+            file_name = source.name
+        self._validate_data_management_file_name(file_name)
+        self._validate_data_management_user_id(user_id)
+        return project_id, source, file_name
+
+    def _upload_file_to_storage_resource(
+        self,
+        storage: dict,
+        source: Path,
+        part_size: int,
+        max_bytes: int,
+        minutes_expiration: int,
+        use_acceleration: bool,
+        max_retries: int,
+        max_url_refreshes: int,
+    ) -> dict:
+        bucket_key, object_key = self.parse_oss_storage_urn(storage["id"])
+        return self.upload_file_to_oss(
+            bucket_key,
+            object_key,
+            source,
+            part_size=part_size,
+            max_bytes=max_bytes,
+            minutes_expiration=minutes_expiration,
+            use_acceleration=use_acceleration,
+            max_retries=max_retries,
+            max_url_refreshes=max_url_refreshes,
+        )
+
     def _post_data_management_jsonapi(
         self,
         project_id: str,
@@ -790,10 +1009,7 @@ class AccDataManagementApi:
         return f"b.{project_id}"
 
     def _data_management_write_headers(self, user_id: str = None) -> dict:
-        if user_id is not None and (
-            not isinstance(user_id, str) or not user_id
-        ):
-            raise ValueError("user_id must be a non-empty string when provided")
+        self._validate_data_management_user_id(user_id)
         headers = {
             "Authorization": f"Bearer {self.base.get_private_token()}",
             "Content-Type": "application/vnd.api+json",
@@ -801,6 +1017,13 @@ class AccDataManagementApi:
         if user_id is not None:
             headers["x-user-id"] = user_id
         return headers
+
+    @staticmethod
+    def _validate_data_management_user_id(user_id: str = None) -> None:
+        if user_id is not None and (
+            not isinstance(user_id, str) or not user_id
+        ):
+            raise ValueError("user_id must be a non-empty string when provided")
 
     @staticmethod
     def _require_data_management_id(value: str, label: str) -> None:

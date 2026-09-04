@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
 
 from acc_sdk.base import AccBase
@@ -355,6 +357,168 @@ class TestCreateFileResources(unittest.TestCase):
             )
 
         self.assertEqual(self.base.transport.post.call_count, 2)
+
+
+class TestUploadFileWriteWorkflows(unittest.TestCase):
+    STORAGE = {
+        "type": "objects",
+        "id": "urn:adsk.objects:os.object:wip.dm.prod/folder/model.rvt",
+    }
+
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccDataManagementApi(self.base)
+        self.api.create_storage_location = MagicMock(return_value=self.STORAGE)
+        self.api.upload_file_to_oss = MagicMock(
+            return_value={"objectId": self.STORAGE["id"], "size": 4}
+        )
+        self.api.create_file_item = MagicMock(
+            return_value={"data": {"type": "items", "id": "item-id"}}
+        )
+        self.api.create_file_version = MagicMock(
+            return_value={
+                "data": {"type": "versions", "id": "version-id"}
+            }
+        )
+
+    def source_file(self, directory, name="model.rvt"):
+        source = Path(directory) / name
+        source.write_bytes(b"data")
+        return source
+
+    def test_uploads_new_item_in_storage_then_creates_item(self):
+        with TemporaryDirectory() as directory:
+            source = self.source_file(directory)
+
+            result = self.api.upload_new_file_item(
+                "project-id",
+                "folder-id",
+                source,
+                user_id="user-id",
+                part_size=123,
+                max_bytes=100,
+                minutes_expiration=10,
+                use_acceleration=False,
+                max_retries=1,
+                max_url_refreshes=1,
+            )
+
+        self.assertEqual(
+            result,
+            {
+                "storage": self.STORAGE,
+                "upload": {"objectId": self.STORAGE["id"], "size": 4},
+                "item": {"data": {"type": "items", "id": "item-id"}},
+            },
+        )
+        self.api.create_storage_location.assert_called_once_with(
+            "b.project-id", "folder-id", "model.rvt", user_id="user-id"
+        )
+        self.api.upload_file_to_oss.assert_called_once_with(
+            "wip.dm.prod",
+            "folder/model.rvt",
+            source,
+            part_size=123,
+            max_bytes=100,
+            minutes_expiration=10,
+            use_acceleration=False,
+            max_retries=1,
+            max_url_refreshes=1,
+        )
+        self.api.create_file_item.assert_called_once_with(
+            "b.project-id",
+            "folder-id",
+            "model.rvt",
+            self.STORAGE["id"],
+            user_id="user-id",
+            item_extension_type="items:autodesk.bim360:File",
+            version_extension_type="versions:autodesk.bim360:File",
+            extension_schema_version="1.0",
+        )
+
+    def test_uploads_new_version_to_item_storage(self):
+        with TemporaryDirectory() as directory:
+            source = self.source_file(directory, "local-name.rvt")
+
+            result = self.api.upload_new_file_version(
+                "b.project-id",
+                "item-id",
+                source,
+                file_name="published-name.rvt",
+                version_extension_type="versions:autodesk.core:File",
+                extension_schema_version="2.0",
+            )
+
+        self.assertEqual(result["version"]["data"]["id"], "version-id")
+        self.api.create_storage_location.assert_called_once_with(
+            "b.project-id",
+            "item-id",
+            "published-name.rvt",
+            target_type="items",
+            user_id=None,
+        )
+        self.api.upload_file_to_oss.assert_called_once_with(
+            "wip.dm.prod",
+            "folder/model.rvt",
+            source,
+            part_size=self.api.DEFAULT_UPLOAD_PART_SIZE,
+            max_bytes=None,
+            minutes_expiration=None,
+            use_acceleration=None,
+            max_retries=2,
+            max_url_refreshes=2,
+        )
+        self.api.create_file_version.assert_called_once_with(
+            "b.project-id",
+            "item-id",
+            "published-name.rvt",
+            self.STORAGE["id"],
+            user_id=None,
+            version_extension_type="versions:autodesk.core:File",
+            extension_schema_version="2.0",
+        )
+
+    def test_upload_failure_stops_before_item_creation(self):
+        self.api.upload_file_to_oss.side_effect = RuntimeError("upload failed")
+        with TemporaryDirectory() as directory:
+            source = self.source_file(directory)
+
+            with self.assertRaisesRegex(RuntimeError, "upload failed"):
+                self.api.upload_new_file_item(
+                    "project-id", "folder-id", source
+                )
+
+        self.api.create_storage_location.assert_called_once()
+        self.api.create_file_item.assert_not_called()
+
+    def test_invalid_inputs_never_create_remote_storage(self):
+        with TemporaryDirectory() as directory:
+            source = self.source_file(directory)
+            missing = Path(directory) / "missing.rvt"
+            invalid_calls = [
+                {"source_path": missing},
+                {"source_path": source, "max_bytes": 1},
+                {"source_path": source, "part_size": 0},
+                {"source_path": source, "minutes_expiration": 61},
+                {"source_path": source, "file_name": "bad/name.rvt"},
+                {"source_path": source, "user_id": ""},
+                {
+                    "source_path": source,
+                    "item_extension_type": "versions:autodesk.core:File",
+                },
+            ]
+
+            for arguments in invalid_calls:
+                with self.subTest(arguments=arguments):
+                    with self.assertRaises(ValueError):
+                        self.api.upload_new_file_item(
+                            "project-id", "folder-id", **arguments
+                        )
+
+        self.api.create_storage_location.assert_not_called()
+        self.api.upload_file_to_oss.assert_not_called()
+        self.api.create_file_item.assert_not_called()
 
 
 if __name__ == "__main__":
