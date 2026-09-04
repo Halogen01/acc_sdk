@@ -1,6 +1,6 @@
 import requests
 import json
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from .base import AccBase
 
 
@@ -934,13 +934,14 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}"
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}"
         
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
             
-        response = requests.get(
+        response = self.base.transport.get(
             url,
             headers=headers,
             params={"includePathInProject": include_path_in_project},
@@ -1100,12 +1101,16 @@ class AccDataManagementApi:
         Returns:
             dict: A dictionary containing the tip version details.
         """
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}/tip"
+        if not project_id.startswith("b."):
+            project_id = "b." + project_id
+
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}/tip"
 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
             headers["x-user-id"] = user_id
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json().get("data", {})
@@ -1129,7 +1134,8 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{item_id}/versions"
+        encoded_item_id = quote(item_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/items/{encoded_item_id}/versions"
 
         headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
         if user_id:
@@ -1142,14 +1148,19 @@ class AccDataManagementApi:
 
         all_versions = []
         while url:
-            response = requests.get(url, headers=headers, params=params)
+            response = self.base.transport.get(url, headers=headers, params=params)
             if response.status_code != 200:
                 response.raise_for_status()
             data = response.json()
             all_versions.extend(data["data"])
 
             # Check if there is a next page
-            url = data["links"].get("next", {}).get("href")
+            next_href = data.get("links", {}).get("next", {}).get("href")
+            url = (
+                urljoin("https://developer.api.autodesk.com", next_href)
+                if next_href
+                else None
+            )
 
             # Clear params to avoid reapplying filters to subsequent pages
             params = {}
@@ -1351,7 +1362,8 @@ class AccDataManagementApi:
         if not project_id.startswith("b."):
             project_id = "b." + project_id
 
-        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/versions/{version_id}"
+        encoded_version_id = quote(version_id, safe="")
+        url = f"https://developer.api.autodesk.com/data/v1/projects/{project_id}/versions/{encoded_version_id}"
 
         headers = {
             "Authorization": f"Bearer {self.base.get_private_token()}",
@@ -1359,14 +1371,12 @@ class AccDataManagementApi:
         if user_id:
             headers["x-user-id"] = user_id
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
-            response_json = response.json().get("data", {})
+            return response.json().get("data", {})
         else:
             response.raise_for_status()
-
-        return response_json.get("data", {})
 
     def get_version_download_formats(self, project_id, version_id, user_id=None)->list[str]:
         """

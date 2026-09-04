@@ -187,5 +187,99 @@ class TestDataManagementFolderNavigation(unittest.TestCase):
         )
 
 
+class TestDataManagementItemVersionNavigation(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_private_token.return_value = "private-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccDataManagementApi(self.base)
+        self.headers = {"Authorization": "Bearer private-token"}
+
+    def response(self, payload, status_code=200):
+        response = MagicMock(status_code=status_code)
+        response.json.return_value = payload
+        return response
+
+    def test_get_item_encodes_urn_and_preserves_facade_shape(self):
+        metadata = {"id": "item-id", "type": "items"}
+        version = {"id": "version-id", "type": "versions"}
+        self.base.transport.get.return_value = self.response(
+            {"data": metadata, "included": [version]}
+        )
+
+        result = self.api.get_item(
+            "project-id",
+            "urn:adsk.wipprod:dm.lineage:item-id",
+            include_path_in_project=True,
+        )
+
+        self.assertEqual(
+            result, {"metadata": metadata, "most_recent_version": version}
+        )
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/items/urn%3Aadsk.wipprod%3Adm.lineage%3Aitem-id",
+            headers=self.headers,
+            params={"includePathInProject": True},
+        )
+
+    def test_get_tip_version_normalizes_project_and_encodes_item(self):
+        payload = {"id": "version-id"}
+        self.base.transport.get.return_value = self.response({"data": payload})
+
+        result = self.api.get_tip_version(
+            "project-id", "urn:adsk.wipprod:dm.lineage:item-id"
+        )
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/items/urn%3Aadsk.wipprod%3Adm.lineage%3Aitem-id/tip",
+            headers=self.headers,
+        )
+
+    def test_get_item_versions_follows_relative_pagination(self):
+        first = self.response(
+            {
+                "data": [{"id": "version-one"}],
+                "links": {
+                    "next": {
+                        "href": "/data/v1/projects/b.project-id/items/item-id/versions?page[number]=2"
+                    }
+                },
+            }
+        )
+        second = self.response({"data": [{"id": "version-two"}], "links": {}})
+        self.base.transport.get.side_effect = [first, second]
+
+        result = self.api.get_item_versions(
+            "project-id", "item-id", filters={"versionNumber": 1}
+        )
+
+        self.assertEqual(result, [{"id": "version-one"}, {"id": "version-two"}])
+        self.base.transport.get.assert_any_call(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/items/item-id/versions",
+            headers=self.headers,
+            params={"filter[versionNumber]": 1},
+        )
+        self.base.transport.get.assert_any_call(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/items/item-id/versions?page[number]=2",
+            headers=self.headers,
+            params={},
+        )
+
+    def test_get_version_returns_data_and_encodes_version_urn(self):
+        payload = {"id": "version-id", "type": "versions"}
+        self.base.transport.get.return_value = self.response({"data": payload})
+
+        result = self.api.get_version(
+            "project-id", "urn:adsk.wipprod:fs.file:file-id?version=2"
+        )
+
+        self.assertEqual(result, payload)
+        self.base.transport.get.assert_called_once_with(
+            "https://developer.api.autodesk.com/data/v1/projects/b.project-id/versions/urn%3Aadsk.wipprod%3Afs.file%3Afile-id%3Fversion%3D2",
+            headers=self.headers,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
