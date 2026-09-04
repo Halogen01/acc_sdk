@@ -90,3 +90,32 @@ Refer to Autodesk's current
 [Data Management API](https://aps.autodesk.com/en/docs/data/v2/developers_guide/overview/)
 and [Object Storage Service](https://aps.autodesk.com/en/docs/data/v2/developers_guide/oss-intro/)
 documentation when selecting scopes and service-specific extension types.
+
+## Region handling
+
+US is the SDK default and requires no change to the normal Data Management or
+signed-S3 workflows. Autodesk routes those requests from the hub identifier and
+OSS storage URN; the SDK does not add an unsupported region header to them.
+
+The public region model contains Autodesk's current values:
+
+```python
+from acc_sdk import ApsRegion, normalize_aps_region
+
+region = normalize_aps_region()       # ApsRegion.US
+region = normalize_aps_region("aus")  # ApsRegion.AUS
+```
+
+After retrieving a hub, an integration can read its reported region without
+changing the response resource:
+
+```python
+hub = acc.data_management.get_hub("account-id")
+region = acc.data_management.get_hub_region(hub)  # defaults to US if omitted
+```
+
+Supported values are `US`, `EMEA`, `AUS`, `CAN`, `DEU`, `IND`, `JPN`, and
+`GBR`. Deprecated or undocumented aliases such as `APAC` and `EU` are rejected
+instead of being silently remapped. Pass `str(region)` only to an Autodesk API
+operation that explicitly documents a region header, query parameter, or body
+field, such as OSS bucket creation or Model Derivative operations.
