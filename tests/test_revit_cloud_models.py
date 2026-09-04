@@ -117,5 +117,152 @@ class TestRevitCloudModelLinkedFiles(unittest.TestCase):
         self.assertIs(acc.revit_cloud_models.base, base)
 
 
+class TestRevitCloudModelLinkedFilePagination(unittest.TestCase):
+    def setUp(self):
+        self.base = MagicMock(spec=AccBase)
+        self.base.get_3leggedToken.return_value = "three-legged-token"
+        self.base.transport = MagicMock(spec=HttpTransport)
+        self.api = AccRevitCloudModelsApi(self.base)
+        self.initial_url = (
+            "https://developer.api.autodesk.com/construction/rcm/v1/projects/"
+            "b.project-id/published-versions/version-id/linked-files"
+        )
+
+    @staticmethod
+    def response(results, pagination=None):
+        response = MagicMock()
+        response.json.return_value = {
+            "linkedFiles": {"results": results, "pagination": pagination}
+        }
+        return response
+
+    def test_follows_relative_next_url_and_combines_results(self):
+        second_url = f"{self.initial_url}?limit=2&offset=2&includeHost=false"
+        self.base.transport.get.side_effect = [
+            self.response(
+                [{"modelName": "A.rvt"}, {"modelName": "B.rvt"}],
+                {
+                    "totalResults": 3,
+                    "nextUrl": (
+                        "/construction/rcm/v1/projects/b.project-id/"
+                        "published-versions/version-id/linked-files?"
+                        "limit=2&offset=2&includeHost=false"
+                    ),
+                },
+            ),
+            self.response(
+                [{"modelName": "C.rvt"}],
+                {"totalResults": 3, "nextUrl": None},
+            ),
+        ]
+
+        result = self.api.get_all_linked_files(
+            "b.project-id", "version-id", max_pages=2, max_results=3
+        )
+
+        self.assertEqual(
+            [linked_file["modelName"] for linked_file in result],
+            ["A.rvt", "B.rvt", "C.rvt"],
+        )
+        self.base.transport.get.assert_any_call(
+            self.initial_url,
+            headers={"Authorization": "Bearer three-legged-token"},
+            params={"includeHost": "false"},
+        )
+        self.base.transport.get.assert_any_call(
+            second_url,
+            headers={"Authorization": "Bearer three-legged-token"},
+            params={},
+        )
+
+    def test_stops_when_server_total_exceeds_result_cap(self):
+        self.base.transport.get.return_value = self.response(
+            [{"modelName": "A.rvt"}],
+            {"totalResults": 11, "nextUrl": f"{self.initial_url}?offset=1"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "exceeds max_results"):
+            self.api.get_all_linked_files(
+                "b.project-id", "version-id", max_results=10
+            )
+
+        self.base.transport.get.assert_called_once()
+
+    def test_stops_before_page_beyond_page_cap(self):
+        self.base.transport.get.return_value = self.response(
+            [], {"totalResults": 2, "nextUrl": f"{self.initial_url}?offset=1"}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "exceeds max_pages"):
+            self.api.get_all_linked_files(
+                "b.project-id", "version-id", max_pages=1
+            )
+
+        self.base.transport.get.assert_called_once()
+
+    def test_rejects_cross_origin_or_wrong_path_next_url(self):
+        invalid_urls = (
+            "https://example.com/steal-token",
+            "https://developer.api.autodesk.com/other/service?offset=2",
+            f"{self.initial_url}#unexpected-fragment",
+        )
+        for next_url in invalid_urls:
+            with self.subTest(next_url=next_url):
+                self.base.transport.get.reset_mock()
+                self.base.transport.get.return_value = self.response(
+                    [], {"totalResults": 1, "nextUrl": next_url}
+                )
+                with self.assertRaisesRegex(RuntimeError, "Autodesk endpoint"):
+                    self.api.get_all_linked_files(
+                        "b.project-id", "version-id", max_pages=2
+                    )
+                self.base.transport.get.assert_called_once()
+
+    def test_rejects_pagination_cycle(self):
+        cycled_url = f"{self.initial_url}?offset=1"
+        self.base.transport.get.side_effect = [
+            self.response([], {"nextUrl": cycled_url}),
+            self.response([], {"nextUrl": cycled_url}),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "contains a cycle"):
+            self.api.get_all_linked_files(
+                "b.project-id", "version-id", max_pages=3
+            )
+
+        self.assertEqual(self.base.transport.get.call_count, 2)
+
+    def test_rejects_invalid_limits_before_token_lookup(self):
+        invalid_limits = ((0, 10), (101, 10), (1, -1), (1, 100_001))
+        for max_pages, max_results in invalid_limits:
+            with self.subTest(max_pages=max_pages, max_results=max_results):
+                with self.assertRaises(ValueError):
+                    self.api.get_all_linked_files(
+                        "b.project-id",
+                        "version-id",
+                        max_pages=max_pages,
+                        max_results=max_results,
+                    )
+
+        self.base.get_3leggedToken.assert_not_called()
+        self.base.transport.get.assert_not_called()
+
+    def test_rejects_malformed_page_collections(self):
+        malformed_pages = (
+            {"results": {}, "pagination": None},
+            {"results": [], "pagination": []},
+            {"results": [], "pagination": {"totalResults": True}},
+        )
+        for linked_files in malformed_pages:
+            with self.subTest(linked_files=linked_files):
+                response = MagicMock()
+                response.json.return_value = {"linkedFiles": linked_files}
+                self.base.transport.get.return_value = response
+                with self.assertRaises(RuntimeError):
+                    self.api.get_all_linked_files(
+                        "b.project-id", "version-id"
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
