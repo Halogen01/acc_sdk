@@ -6,6 +6,10 @@ create applications that leverage the [Autodesk Construction Cloud API](https://
 [![PyPI version](https://badge.fury.io/py/acc_sdk.svg)](https://badge.fury.io/py/acc_sdk)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+> **Maintained fork:** This repository is the Halogen/Peritas compatibility fork.
+> It is maintained independently of `realdanielbyrne/acc_sdk` and is not published
+> as the upstream `acc-sdk` package on PyPI.
+
 ## Introduction
 
 The Autodesk Construction Cloud SDK, AccSdk, is a software development kit for Python that helps developers
@@ -80,10 +84,33 @@ The following services are planned for future implementation:
 
 ## Installation
 
+Python 3.12 or newer is supported by the package metadata. The current
+ACC-Bulk-Manager and Peritas-Portal integrations require Python 3.13 or newer,
+and the compatibility baseline has been verified on Python 3.13.
+
+Production integrations must install this fork from an immutable commit. The
+current compatibility baseline is `219b423a7d4bdb89cf6cbe721a99822f2513e3e5`
+(`halogen-compat-0.5.15`):
+
 ```bash
-pip install acc_sdk
-poetry install
+python -m pip install "acc-sdk @ git+https://github.com/Halogen01/acc_sdk.git@219b423a7d4bdb89cf6cbe721a99822f2513e3e5"
 ```
+
+For a uv-managed project, declare the dependency and source as follows:
+
+```toml
+[project]
+dependencies = ["acc-sdk"]
+
+[tool.uv.sources]
+acc-sdk = { git = "https://github.com/Halogen01/acc_sdk.git", rev = "219b423a7d4bdb89cf6cbe721a99822f2513e3e5" }
+```
+
+Commit the resulting `uv.lock`. Do not use the unqualified
+`pip install acc_sdk` command for these integrations because that resolves the
+separately maintained PyPI release rather than this fork.
+
+For local SDK development, clone this repository and run `poetry install`.
 
 ## Basic Usage
 
