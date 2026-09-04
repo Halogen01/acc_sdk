@@ -9,6 +9,7 @@ from .forms import AccFormsApi
 from .authentication import Authentication
 from .companies import AccCompaniesApi
 from .business_units import AccBusinessUnitsApi
+from .revit_cloud_models import AccRevitCloudModelsApi
 
 
 # Aggregator class supporting both 2-legged and 3-legged auth.
@@ -116,6 +117,7 @@ class Acc:
         # Apis that require 3-legged authorization
         self.forms = AccFormsApi(self.base)
         self.user_profiles = AccAccountUsersApi(self.base)
+        self.revit_cloud_models = AccRevitCloudModelsApi(self.base)
 
     def get_forms(self, project_id, **forms_kwargs) -> list[dict]:
         """
