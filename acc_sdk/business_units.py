@@ -1,5 +1,3 @@
-from calendar import c
-import requests
 from .base import AccBase
 
 
@@ -65,7 +63,7 @@ class AccBusinessUnitsApi:
         headers = {"Authorization": token}
         url = self.base_url.replace(":account_id", self.base.account_id)
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
         if response.status_code == 200:
             content = response.json()
             return content.get("business_units", [])
@@ -142,7 +140,7 @@ class AccBusinessUnitsApi:
                    "Content-Type": "application/json"}
         url = self.base_url.replace(":account_id", self.base.account_id)
 
-        response = requests.put(url, headers=headers, json=business_units)
+        response = self.base.transport.put(url, headers=headers, json=business_units)
         if response.status_code == 200:
             content = response.json()
             return content
