@@ -118,8 +118,14 @@ class Authentication:
             if key.startswith("accapi_"):
                 self.token_names.append(key)
                 if not self.is_authorized(key):
-                    del self._session[key]
-                    self.token_names.remove(key)
+                    token = self._session[key]
+                    can_renew = bool(token.get("refresh_token")) or (
+                        token.get("grant_type") == GrantType.ClientCreds.value
+                        and bool(token.get("scopes"))
+                    )
+                    if not can_renew:
+                        del self._session[key]
+                        self.token_names.remove(key)
 
         auth_base_url = "https://developer.api.autodesk.com/authentication/v2"
         self.oidc_spec_url = "https://developer.api.autodesk.com/.well-known/openid-configuration"
@@ -324,10 +330,14 @@ class Authentication:
             return None
         
         if self.is_expired(token_name):                            
-            if self._session[token_name].get("refresh_token"):
-                self.request_private_refresh_token(token_name)
+            stored_token = self._session[token_name]
+            scopes = list(stored_token.get("scopes") or [])
+            if stored_token.get("refresh_token"):
+                self.request_private_refresh_token(
+                    scopes=scopes, token_name=token_name
+                )
             else:
-                self.request_2legged_token(token_name)
+                self.request_2legged_token(scopes=scopes, token_name=token_name)
 
         return self._session[token_name].get("access_token")
 

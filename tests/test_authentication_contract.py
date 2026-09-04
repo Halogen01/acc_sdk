@@ -8,8 +8,6 @@ Peritas-Portal without requiring credentials or making network requests.
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from acc_sdk import Acc, Authentication
 from acc_sdk.authentication import GrantType
 from acc_sdk.base import AccBase
@@ -101,25 +99,22 @@ def test_explicit_two_legged_renewal_replaces_token_without_duplicate_name(mock_
     assert auth.get_token_names() == ["accapi_2legged"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Expired two-legged tokens currently lose their scopes during automatic renewal",
-)
 @patch("acc_sdk.authentication.requests.post")
 def test_expired_two_legged_token_renews_automatically(mock_post):
     session = {
         "accapi_2legged": {
             "access_token": "expired-access-token",
-            "expires_at": datetime.now().timestamp() + 3600,
+            "expires_at": datetime.now().timestamp() - 1,
             "grant_type": GrantType.ClientCreds.value,
             "scopes": ["account:read"],
         }
     }
     auth, _ = make_auth(session)
-    session["accapi_2legged"]["expires_at"] = datetime.now().timestamp() - 1
     mock_post.return_value = token_response("renewed-access-token")
 
-    assert auth.get_access_token("accapi_2legged") == "renewed-access-token"
+    assert auth.get_2legged_token() == "renewed-access-token"
+    assert session["accapi_2legged"]["access_token"] == "renewed-access-token"
+    assert mock_post.call_args.kwargs["data"]["scope"] == "account:read"
 
 
 def test_acc_construction_preserves_consumer_service_surface():
