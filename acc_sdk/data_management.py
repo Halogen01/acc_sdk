@@ -1,12 +1,207 @@
 import requests
 import json
+import os
+import tempfile
+from pathlib import Path
 from urllib.parse import quote, urljoin
 from .base import AccBase
 
 
 class AccDataManagementApi:
+    OSS_STORAGE_URN_PREFIX = "urn:adsk.objects:os.object:"
+    DEFAULT_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+    MAX_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024
+
     def __init__(self, base: AccBase):
         self.base = base
+
+    ###########################################################################
+    # OSS v2 download workflow
+    ###########################################################################
+    @classmethod
+    def parse_oss_storage_urn(cls, storage_urn: str) -> tuple[str, str]:
+        """Return the bucket and object keys from an Autodesk OSS storage URN."""
+        if not isinstance(storage_urn, str) or not storage_urn.startswith(
+            cls.OSS_STORAGE_URN_PREFIX
+        ):
+            raise ValueError("A valid Autodesk OSS storage URN is required")
+
+        bucket_key, separator, object_key = storage_urn[
+            len(cls.OSS_STORAGE_URN_PREFIX) :
+        ].partition("/")
+        if not separator or not bucket_key or not object_key:
+            raise ValueError("The OSS storage URN must contain bucket and object keys")
+
+        return bucket_key, object_key
+
+    def get_signed_s3_download(
+        self,
+        bucket_key: str,
+        object_key: str,
+        minutes_expiration: int = None,
+        use_cdn: bool = None,
+        public_resource_fallback: bool = None,
+    ) -> dict:
+        """Generate an OSS v2 signed URL response for one object download."""
+        if not isinstance(bucket_key, str) or not bucket_key:
+            raise ValueError("bucket_key is required")
+        if not isinstance(object_key, str) or not object_key:
+            raise ValueError("object_key is required")
+        if minutes_expiration is not None and (
+            isinstance(minutes_expiration, bool)
+            or not isinstance(minutes_expiration, int)
+            or not 1 <= minutes_expiration <= 60
+        ):
+            raise ValueError("minutes_expiration must be an integer from 1 to 60")
+        if use_cdn is not None and not isinstance(use_cdn, bool):
+            raise ValueError("use_cdn must be a boolean")
+        if public_resource_fallback is not None and not isinstance(
+            public_resource_fallback, bool
+        ):
+            raise ValueError("public_resource_fallback must be a boolean")
+
+        encoded_bucket_key = quote(bucket_key, safe="")
+        encoded_object_key = quote(object_key, safe="")
+        url = (
+            "https://developer.api.autodesk.com/oss/v2/buckets/"
+            f"{encoded_bucket_key}/objects/{encoded_object_key}/signeds3download"
+        )
+        headers = {"Authorization": f"Bearer {self.base.get_private_token()}"}
+        params = {}
+        if minutes_expiration is not None:
+            params["minutesExpiration"] = minutes_expiration
+        if use_cdn is not None:
+            params["useCdn"] = use_cdn
+        if public_resource_fallback is not None:
+            params["public-resource-fallback"] = public_resource_fallback
+
+        response = self.base.transport.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def download_from_signed_url(
+        self,
+        signed_url: str,
+        destination_path,
+        chunk_size: int = DEFAULT_DOWNLOAD_CHUNK_SIZE,
+        max_bytes: int = None,
+    ) -> str:
+        """Stream a signed download to disk and atomically replace the destination."""
+        if not isinstance(signed_url, str) or not signed_url:
+            raise ValueError("signed_url is required")
+        if not isinstance(destination_path, (str, os.PathLike)) or not os.fspath(
+            destination_path
+        ):
+            raise ValueError("destination_path is required")
+        self._validate_download_limits(chunk_size, max_bytes)
+
+        destination = Path(destination_path)
+        if destination.is_dir():
+            raise ValueError("destination_path must identify a file")
+
+        response = self.base.transport.get(signed_url, stream=True)
+        temporary_path = None
+        try:
+            response.raise_for_status()
+            content_length = response.headers.get("Content-Length")
+            if (
+                max_bytes is not None
+                and content_length is not None
+                and int(content_length) > max_bytes
+            ):
+                raise ValueError("Download exceeds max_bytes")
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".part",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                bytes_written = 0
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if not chunk:
+                        continue
+                    bytes_written += len(chunk)
+                    if max_bytes is not None and bytes_written > max_bytes:
+                        raise ValueError("Download exceeds max_bytes")
+                    temporary_file.write(chunk)
+
+            os.replace(temporary_path, destination)
+            temporary_path = None
+            return str(destination)
+        finally:
+            response.close()
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @classmethod
+    def _validate_download_limits(cls, chunk_size: int, max_bytes: int) -> None:
+        if (
+            isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, int)
+            or not 1 <= chunk_size <= cls.MAX_DOWNLOAD_CHUNK_SIZE
+        ):
+            raise ValueError(
+                "chunk_size must be an integer from 1 to "
+                f"{cls.MAX_DOWNLOAD_CHUNK_SIZE} bytes"
+            )
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 1
+        ):
+            raise ValueError("max_bytes must be a positive integer")
+
+    def download_version(
+        self,
+        project_id: str,
+        version_id: str,
+        destination_path,
+        user_id: str = None,
+        minutes_expiration: int = None,
+        use_cdn: bool = None,
+        chunk_size: int = DEFAULT_DOWNLOAD_CHUNK_SIZE,
+        max_bytes: int = None,
+    ) -> str:
+        """Resolve a Data Management version and stream its OSS object to disk."""
+        self._validate_download_limits(chunk_size, max_bytes)
+        version = self.get_version(project_id, version_id, user_id=user_id)
+        try:
+            storage_urn = version["relationships"]["storage"]["data"]["id"]
+        except (KeyError, TypeError):
+            raise ValueError(
+                "The version does not contain an OSS storage relationship"
+            ) from None
+
+        bucket_key, object_key = self.parse_oss_storage_urn(storage_urn)
+        signed_download = self.get_signed_s3_download(
+            bucket_key,
+            object_key,
+            minutes_expiration=minutes_expiration,
+            use_cdn=use_cdn,
+            public_resource_fallback=True,
+        )
+        signed_url = signed_download.get("url")
+        if not signed_url:
+            status = signed_download.get("status", "unknown")
+            raise RuntimeError(
+                "OSS did not return a single download URL "
+                f"(download status: {status})"
+            )
+
+        if max_bytes is not None:
+            signed_size = signed_download.get("size")
+            if isinstance(signed_size, int) and signed_size > max_bytes:
+                raise ValueError("Download exceeds max_bytes")
+
+        return self.download_from_signed_url(
+            signed_url,
+            destination_path,
+            chunk_size=chunk_size,
+            max_bytes=max_bytes,
+        )
 
     ###########################################################################
     # Hubs
