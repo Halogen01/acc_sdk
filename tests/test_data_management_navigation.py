@@ -1,8 +1,10 @@
 import unittest
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 from acc_sdk.base import AccBase
 from acc_sdk.data_management import AccDataManagementApi
+from acc_sdk.regions import ApsRegion
 from acc_sdk.transport import HttpTransport
 
 
@@ -102,6 +104,47 @@ class TestDataManagementHubProjectNavigation(unittest.TestCase):
             "https://developer.api.autodesk.com/project/v1/hubs/b.hub-id/projects/b.project-id/hub",
             headers=self.headers,
         )
+
+    def test_get_hub_region_prefers_explicit_us_metadata(self):
+        hub = {"id": "b.hub-id", "attributes": {"region": "US"}}
+
+        self.assertIs(self.api.get_hub_region(hub), ApsRegion.US)
+
+    def test_get_hub_region_supports_current_non_us_metadata(self):
+        for value, expected in (
+            ("AUS", ApsRegion.AUS),
+            ("emea", ApsRegion.EMEA),
+            ("GBR", ApsRegion.GBR),
+        ):
+            with self.subTest(value=value):
+                hub = {"attributes": {"region": value}}
+                self.assertIs(self.api.get_hub_region(hub), expected)
+
+    def test_get_hub_region_defaults_missing_metadata_to_us_without_mutation(self):
+        hub = {"id": "b.hub-id", "attributes": {"name": "US Account"}}
+        original = deepcopy(hub)
+
+        result = self.api.get_hub_region(hub)
+
+        self.assertIs(result, ApsRegion.US)
+        self.assertEqual(hub, original)
+
+    def test_get_hub_region_accepts_an_explicit_fallback(self):
+        self.assertIs(
+            self.api.get_hub_region({}, default=ApsRegion.CAN), ApsRegion.CAN
+        )
+
+    def test_get_hub_region_rejects_invalid_payloads_or_region(self):
+        invalid_hubs = (
+            None,
+            [],
+            {"attributes": []},
+            {"attributes": {"region": "APAC"}},
+        )
+        for hub in invalid_hubs:
+            with self.subTest(hub=hub):
+                with self.assertRaises(ValueError):
+                    self.api.get_hub_region(hub)
 
 
 class TestDataManagementFolderNavigation(unittest.TestCase):

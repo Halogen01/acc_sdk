@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote, urljoin
 from .base import AccBase
+from .regions import ApsRegion, normalize_aps_region
 
 
 class _FileSegment:
@@ -1119,6 +1120,24 @@ class AccDataManagementApi:
             hub_data = response.json().get("data", {})
             return hub_data            
         response.raise_for_status()
+
+    @staticmethod
+    def get_hub_region(
+        hub: dict, default: str | ApsRegion = ApsRegion.US
+    ) -> ApsRegion:
+        """Return the current Autodesk region reported by a hub resource.
+
+        Data Management routes project requests from the hub identifier and
+        does not accept a region selector. Older US hub payloads that omit
+        ``attributes.region`` therefore default to ``US`` without modifying
+        the response resource.
+        """
+        if not isinstance(hub, dict):
+            raise ValueError("A Data Management hub resource is required")
+        attributes = hub.get("attributes", {})
+        if not isinstance(attributes, dict):
+            raise ValueError("Hub attributes must be an object")
+        return normalize_aps_region(attributes.get("region"), default=default)
 
     ###########################################################################
     # Projects
