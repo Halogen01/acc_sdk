@@ -1,4 +1,3 @@
-import requests
 from .base import AccBase
 
 
@@ -702,7 +701,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json()
@@ -762,7 +761,7 @@ class AccDataConnectorApi:
             "Authorization": f"Bearer {self.base.get_3leggedToken()}",
         }
 
-        response = requests.get(url, headers=headers)
+        response = self.base.transport.get(url, headers=headers)
 
         if response.status_code == 200:
             return response.json()
