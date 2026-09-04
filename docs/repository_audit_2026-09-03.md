@@ -292,14 +292,16 @@ shapes should delegate to these internals unchanged.
 These capabilities should initially be new methods. Existing methods should not
 silently change return shapes or token-selection behaviour.
 
-**Progress recorded 4 September 2026:** Items 1 through 7 are complete in the
+**Progress recorded 4 September 2026:** Items 1 through 8 are complete in the
 Halogen fork. The legacy Data Management methods remain available, while tested
 additive methods now provide corrected navigation, OSS v2 streamed downloads,
 single/multipart signed-S3 uploads, storage creation, and complete new-item and
 new-version upload workflows. Current Autodesk region values and non-mutating
 hub-region detection are also available, with `US` remaining the default. The
 RCM service retrieves linked files for published Revit Cloud Model versions with
-bounded, same-origin pagination. Item 8 remains planned.
+bounded, same-origin pagination. Secure Service Account authentication is now an
+explicit, lazy provider created with `Authentication.for_service_account(...)`;
+the legacy constructor and token-selection behavior remain compatible.
 
 ### Phase 5: Deliberate migration
 
@@ -350,6 +352,8 @@ The safe sequence is:
 - [PeritasAus/Peritas-Portal](https://github.com/PeritasAus/Peritas-Portal)
 - [Autodesk APS OpenAPI specifications](https://github.com/autodesk-platform-services/aps-sdk-openapi)
 - [Secure Service Accounts general availability](https://aps.autodesk.com/blog/update-secure-service-accounts-ssa-goes-ga)
+- [Secure Service Account OpenAPI specification](https://github.com/autodesk-platform-services/aps-sdk-openapi/blob/main/secureserviceaccount/secureServiceAccount.yaml)
+- [Official Python Secure Service Account sample](https://github.com/autodesk-platform-services/aps-mcp-server-python/tree/main/mcp_server_ssa)
 - [OSS v1 endpoint deprecation](https://aps.autodesk.com/blog/object-storage-service-oss-api-deprecating-v1-endpoints)
 - [Australia region changes](https://aps.autodesk.com/blog/changes-are-coming-autodesk-platform-services-aps-australia-region)
 - [Revit Cloud Model download changes](https://aps.autodesk.com/blog/changes-are-coming-revit-cloud-model-downloads-autodeskbim-360-docs-starting-february-15-2026)

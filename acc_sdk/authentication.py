@@ -3,6 +3,9 @@ from requests.auth import HTTPBasicAuth
 from urllib.parse import urlencode, quote
 from datetime import datetime
 from enum import Enum
+import time
+
+import jwt
 
 from .transport import HttpTransport
 
@@ -10,6 +13,7 @@ class GrantType(Enum):
     ClientCreds = "client_credentials"
     AuthCode = "authorization_code"
     Refresh = "refresh_token"
+    ServiceAccount = "urn:ietf:params:oauth:grant-type:jwt-bearer"
     
 class ResponseType(Enum):
     Code = "code"
@@ -166,6 +170,62 @@ class Authentication:
         self.callback_url  = callback_url
         self.post_logout_url = logout_url
 
+        # Populated only by ``for_service_account``. Keeping this configuration
+        # out of the token session prevents private key material from reaching a
+        # Flask cookie or another caller-provided token store.
+        self._service_account_id = None
+        self._service_account_key_id = None
+        self._service_account_private_key = None
+        self._service_account_scopes = ()
+        self._service_account_token_name = "accapi_service_account"
+
+    @classmethod
+    def for_service_account(
+        cls,
+        *,
+        client_id: str,
+        client_secret: str,
+        service_account_id: str,
+        key_id: str,
+        private_key: str | bytes,
+        scopes: list[str] | tuple[str, ...],
+        session=None,
+        admin_email: str = "",
+        token_name: str = "accapi_service_account",
+    ):
+        """Create an authentication client backed by an APS service account.
+
+        Token acquisition is lazy: the signed assertion is created and
+        exchanged only when a three-legged token is first requested. The
+        private key remains on this server-side object and is never persisted in
+        the caller's token session.
+        """
+        required_values = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "service_account_id": service_account_id,
+            "key_id": key_id,
+            "private_key": private_key,
+        }
+        for name, value in required_values.items():
+            if not value:
+                raise ValueError(f"{name} is required for service account authentication")
+
+        normalized_scopes = cls._normalize_service_account_scopes(scopes)
+        normalized_token_name = cls._normalize_token_name(token_name)
+        auth = cls(
+            client_id=client_id,
+            client_secret=client_secret,
+            admin_email=admin_email,
+            session={} if session is None else session,
+        )
+        auth._service_account_id = service_account_id
+        auth._service_account_key_id = key_id
+        auth._service_account_private_key = private_key
+        auth._service_account_scopes = normalized_scopes
+        auth._service_account_token_name = normalized_token_name
+        return auth
+
 
     ###########################################################################
     # Token Helpers
@@ -174,6 +234,27 @@ class Authentication:
     def _get_client_auth(self):
         """Build confidential-client authentication without exposing credentials."""
         return HTTPBasicAuth(self.client_id, self.client_secret)
+
+    @staticmethod
+    def _normalize_token_name(token_name: str) -> str:
+        if not isinstance(token_name, str) or not token_name.strip():
+            raise ValueError("token_name must be a non-empty string")
+        token_name = token_name.strip()
+        return token_name if token_name.startswith("accapi_") else f"accapi_{token_name}"
+
+    @staticmethod
+    def _normalize_service_account_scopes(scopes) -> tuple[str, ...]:
+        if isinstance(scopes, str):
+            raise TypeError("scopes must be an iterable of scope strings, not a string")
+        try:
+            normalized = tuple(scopes)
+        except TypeError as exc:
+            raise TypeError("scopes must be an iterable of scope strings") from exc
+        if not normalized:
+            raise ValueError("at least one service account scope is required")
+        if any(not isinstance(scope, str) or not scope.strip() for scope in normalized):
+            raise ValueError("service account scopes must be non-empty strings")
+        return tuple(scope.strip() for scope in normalized)
 
     @property
     def transport(self):
@@ -343,7 +424,11 @@ class Authentication:
         if self.is_expired(token_name):                            
             stored_token = self._session[token_name]
             scopes = list(stored_token.get("scopes") or [])
-            if stored_token.get("refresh_token"):
+            if stored_token.get("grant_type") == GrantType.ServiceAccount.value:
+                self.request_service_account_token(
+                    scopes=scopes, token_name=token_name
+                )
+            elif stored_token.get("refresh_token"):
                 self.request_private_refresh_token(
                     scopes=scopes, token_name=token_name
                 )
@@ -412,6 +497,16 @@ class Authentication:
                 print("No 3-legged token found")
             ```
         """
+        if self._service_account_id:
+            token_name = self._service_account_token_name
+            if token_name not in self.token_names:
+                token = self.request_service_account_token(token_name=token_name)
+                return token["access_token"]
+            if self.expires_in(token_name) <= 60:
+                token = self.request_service_account_token(token_name=token_name)
+                return token["access_token"]
+            return self.get_access_token(token_name)
+
         # loop through auth_client._session dictionary 
         # and return the first 3legged token type found
         for key in self.get_token_names():
@@ -419,6 +514,60 @@ class Authentication:
                 return self.get_access_token(key)
             
         return None
+
+    def request_service_account_token(
+        self,
+        scopes=None,
+        token_name=None,
+    ) -> dict:
+        """Exchange an RSA-signed SSA assertion for a user-context token."""
+        if not self._service_account_id:
+            raise RuntimeError(
+                "service account authentication requires Authentication.for_service_account"
+            )
+
+        requested_scopes = self._normalize_service_account_scopes(
+            self._service_account_scopes if scopes is None else scopes
+        )
+        resolved_token_name = self._normalize_token_name(
+            self._service_account_token_name if token_name is None else token_name
+        )
+        now = int(time.time())
+        assertion = jwt.encode(
+            {
+                "iss": self.client_id,
+                "sub": self._service_account_id,
+                "aud": self.token_url,
+                "exp": now + 300,
+                "iat": now,
+                "scope": list(requested_scopes),
+            },
+            self._service_account_private_key,
+            algorithm="RS256",
+            headers={"kid": self._service_account_key_id, "alg": "RS256"},
+        )
+        response = self._transport.post(
+            self.token_url,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "Accapi/1.0",
+            },
+            data={
+                "grant_type": GrantType.ServiceAccount.value,
+                "assertion": assertion,
+            },
+            auth=self._get_client_auth(),
+        )
+        response.raise_for_status()
+        token = response.json()
+        token["expires_at"] = time.time() + int(token["expires_in"])
+        token["scopes"] = list(requested_scopes)
+        token["grant_type"] = GrantType.ServiceAccount.value
+        self._session[resolved_token_name] = token
+        if resolved_token_name not in self.token_names:
+            self.token_names.append(resolved_token_name)
+        return token
     
 
     ###########################################################################
