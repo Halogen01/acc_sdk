@@ -115,6 +115,12 @@ separately maintained PyPI release rather than this fork.
 
 For local SDK development, clone this repository and run `poetry install`.
 
+New integrations should use the explicit authentication factories documented in
+[Authentication API](docs/authentication.md): `for_client_credentials(...)`,
+`for_service_account(...)`, or `for_authorization_code(...)`. The original
+constructor remains available for compatibility while existing applications are
+migrated.
+
 ## Basic Usage
 
 ### Authentication

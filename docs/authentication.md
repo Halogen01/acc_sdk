@@ -4,9 +4,62 @@ The `Authentication` class provides methods to manage authentication with the
 Autodesk Construction Cloud (ACC) API. It supports two-legged, interactive
 three-legged, and Secure Service Account (SSA) flows.
 
-## Initialize Authentication
+## Explicit Construction for New Integrations
 
-Create a new instance of the Authentication client with your credentials.
+New integrations should choose their token provider explicitly. Client
+credentials are configured with an immutable scope copy and acquired lazily:
+
+```python
+import os
+
+from acc_sdk import Authentication
+
+auth_client = Authentication.for_client_credentials(
+    client_id=os.environ["APS_CLIENT_ID"],
+    client_secret=os.environ["APS_CLIENT_SECRET"],
+    scopes=["data:read", "data:write"],
+)
+
+access_token = auth_client.get_2legged_token()
+```
+
+Interactive and PKCE integrations use the authorization-code factory:
+
+```python
+import os
+import secrets
+
+from acc_sdk import Authentication
+
+auth_client = Authentication.for_authorization_code(
+    client_id=os.environ["APS_CLIENT_ID"],
+    client_secret=os.environ.get("APS_CLIENT_SECRET", ""),
+    callback_url=os.environ["APS_CALLBACK_URL"],
+    session=server_side_token_session,
+)
+
+state = secrets.token_urlsafe(32)
+server_side_request_session["aps_oauth_state"] = state
+authorization_url = auth_client.get_authorization_url(
+    scopes=["data:read"],
+    state=state,
+)
+```
+
+Before exchanging the callback code, compare the returned `state` with the
+server-side value using `secrets.compare_digest`. PKCE integrations must also
+keep the verifier server-side until the callback. Do not store access tokens,
+OAuth state, or PKCE verifiers in Flask's default client-side cookie session.
+
+The explicit factories validate required configuration before token requests.
+Factory-configured client-credentials failures preserve the underlying
+`requests` response and HTTP status. Their token requests use the shared
+connection/read timeout and are not automatically retried.
+
+## Legacy Construction
+
+The original constructor remains supported for ACC-Bulk-Manager,
+Peritas-Portal, and other existing integrations while they are migrated:
 
 ```python
 auth_client = Authentication(
@@ -21,7 +74,8 @@ auth_client = Authentication(
 
 ## 2-Legged Authentication
 
-Obtain a client credentials token for server-to-server operations.
+Legacy clients can explicitly request a client-credentials token. Factory
+clients normally use the lazy `get_2legged_token()` method shown above.
 
 ```python
 scopes = [
