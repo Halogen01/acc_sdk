@@ -178,6 +178,71 @@ class Authentication:
         self._service_account_private_key = None
         self._service_account_scopes = ()
         self._service_account_token_name = "accapi_service_account"
+        self._client_credentials_scopes = ()
+        self._client_credentials_token_name = "accapi_2legged"
+        self._authorization_code_provider = False
+
+    @classmethod
+    def for_client_credentials(
+        cls,
+        *,
+        client_id: str,
+        client_secret: str,
+        scopes: list[str] | tuple[str, ...],
+        session=None,
+        admin_email: str = "",
+        token_name: str = "accapi_2legged",
+    ):
+        """Create a client with an explicit, lazy client-credentials provider."""
+        cls._require_nonempty_string(client_id, "client_id")
+        cls._require_nonempty_string(client_secret, "client_secret")
+        normalized_scopes = cls._normalize_service_account_scopes(scopes)
+        normalized_token_name = cls._normalize_token_name(token_name)
+        auth = cls(
+            client_id=client_id,
+            client_secret=client_secret,
+            admin_email=admin_email,
+            session={} if session is None else session,
+        )
+        unsupported_scopes = [
+            scope for scope in normalized_scopes
+            if auth.supported_scopes and scope not in auth.supported_scopes
+        ]
+        if unsupported_scopes:
+            raise ValueError(
+                "unsupported client-credentials scopes: "
+                + ", ".join(unsupported_scopes)
+            )
+        auth._client_credentials_scopes = normalized_scopes
+        auth._client_credentials_token_name = normalized_token_name
+        return auth
+
+    @classmethod
+    def for_authorization_code(
+        cls,
+        *,
+        client_id: str,
+        callback_url: str,
+        client_secret: str = "",
+        session=None,
+        admin_email: str = "",
+        logout_url: str = "",
+    ):
+        """Create a client explicitly configured for authorization-code flows."""
+        cls._require_nonempty_string(client_id, "client_id")
+        cls._require_nonempty_string(callback_url, "callback_url")
+        if not isinstance(client_secret, str):
+            raise TypeError("client_secret must be a string")
+        auth = cls(
+            client_id=client_id,
+            client_secret=client_secret,
+            admin_email=admin_email,
+            session={} if session is None else session,
+            callback_url=callback_url,
+            logout_url=logout_url,
+        )
+        auth._authorization_code_provider = True
+        return auth
 
     @classmethod
     def for_service_account(
@@ -234,6 +299,14 @@ class Authentication:
     def _get_client_auth(self):
         """Build confidential-client authentication without exposing credentials."""
         return HTTPBasicAuth(self.client_id, self.client_secret)
+
+    @staticmethod
+    def _require_nonempty_string(value, name: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"{name} must be a string")
+        if not value.strip():
+            raise ValueError(f"{name} is required")
+        return value.strip()
 
     @staticmethod
     def _normalize_token_name(token_name: str) -> str:
@@ -472,6 +545,16 @@ class Authentication:
                 print("No 2-legged token found")
             ```
         """
+        if self._client_credentials_scopes:
+            token_name = self._client_credentials_token_name
+            if token_name not in self.token_names or self.expires_in(token_name) <= 60:
+                token = self.request_2legged_token(
+                    scopes=list(self._client_credentials_scopes),
+                    token_name=token_name,
+                )
+                return token["access_token"]
+            return self.get_access_token(token_name)
+
         # loop through auth_client._session dictionary 
         # and return the first 3legged token type found        
         for key in self.get_token_names():
@@ -1092,6 +1175,8 @@ class Authentication:
                             
             return token
         else:
+            if self._client_credentials_scopes:
+                response.raise_for_status()
             raise Exception(f"Failed to get 2-legged token: {response.text}")
 
 

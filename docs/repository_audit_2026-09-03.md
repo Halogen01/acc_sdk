@@ -317,6 +317,13 @@ The current constructor should remain available until both consumers have been
 migrated and verified. Any removal or semantic change should occur only in a
 clearly versioned breaking release.
 
+**Progress recorded 7 September 2026:** The SDK now provides explicit, additive
+construction for client-credentials, Secure Service Account, and authorization-
+code flows. Factory-created client-credentials tokens are lazy and tied to their
+configured token name; legacy construction and two-legged-first selection remain
+unchanged. Package metadata has advanced to `0.6.0`. Consumer migration remains
+gated on the verified immutable Halogen release tag.
+
 ## Fork governance
 
 - Keep `origin` pointing to `Halogen01/acc_sdk`.
