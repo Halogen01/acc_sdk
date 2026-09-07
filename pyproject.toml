@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "acc_sdk"
 description = "An Fork of the Unofficial Python Implementation of the Autodesk Construction Cloud API SDK"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{name="Daniel Byrne", email= "realdanielbyrne@icloud.com"}]
 maintainers = [{name="Ben O'Brien", email= "bobrien@peritas.au"}]
 readme = "README.md"
